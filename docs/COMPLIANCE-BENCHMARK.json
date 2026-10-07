@@ -1,0 +1,89 @@
+{
+  "timestamp": "2026-10-07T05:18:44.502Z",
+  "platform": "darwin",
+  "arch": "arm64",
+  "cpu": "Apple M5",
+  "node": "v24.21.0",
+  "profile": "xrechnung-ubl-3.0.2-2026-08-31",
+  "samples": [
+    {
+      "fixture": "standard19",
+      "bytes": 4613,
+      "serializationMs": 8.31,
+      "validationMs": 3025
+    },
+    {
+      "fixture": "reduced7",
+      "bytes": 4611,
+      "serializationMs": 1.12,
+      "validationMs": 3190
+    },
+    {
+      "fixture": "mixed",
+      "bytes": 5639,
+      "serializationMs": 7.15,
+      "validationMs": 3280
+    },
+    {
+      "fixture": "adjustments",
+      "bytes": 5878,
+      "serializationMs": 1.49,
+      "validationMs": 3204
+    },
+    {
+      "fixture": "standard19",
+      "bytes": 4613,
+      "serializationMs": 1.06,
+      "validationMs": 3124
+    },
+    {
+      "fixture": "reduced7",
+      "bytes": 4611,
+      "serializationMs": 1.63,
+      "validationMs": 3039
+    },
+    {
+      "fixture": "mixed",
+      "bytes": 5639,
+      "serializationMs": 0.81,
+      "validationMs": 3068
+    },
+    {
+      "fixture": "adjustments",
+      "bytes": 5878,
+      "serializationMs": 0.79,
+      "validationMs": 3156
+    },
+    {
+      "fixture": "standard19",
+      "bytes": 4613,
+      "serializationMs": 0.64,
+      "validationMs": 3379
+    },
+    {
+      "fixture": "reduced7",
+      "bytes": 4611,
+      "serializationMs": 0.66,
+      "validationMs": 3430
+    },
+    {
+      "fixture": "mixed",
+      "bytes": 5639,
+      "serializationMs": 0.54,
+      "validationMs": 3348
+    },
+    {
+      "fixture": "adjustments",
+      "bytes": 5878,
+      "serializationMs": 0.58,
+      "validationMs": 2999
+    }
+  ],
+  "validation": {
+    "count": 12,
+    "p50Ms": 3190,
+    "p95Ms": 3430,
+    "maxMs": 3430
+  },
+  "method": "Sequential fresh JVM per document; four fictional supported fixtures, three iterations; includes process startup, rule verification on first request and temp cleanup. Not a production capacity guarantee."
+}

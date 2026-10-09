@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { InvoiceDirections } from '../../../components/invoice-directions';
 import { principal, service } from '../../../lib/server';
 import {
   Heading,
@@ -40,12 +41,13 @@ export default async function Invoices({
         description="Vom ersten Entwurf bis zur archivierten XRechnung."
       >
         <Link className="button button-outline" href="/invoices/import">
-          Brief / QR-Code lesen
+          Aus Dokument erstellen
         </Link>
         <Link className="button button-primary" href="/invoices/new">
           Neue Rechnung
         </Link>
       </Heading>
+      <InvoiceDirections current="outgoing" />
       <section className="panel">
         <form className="filter-bar">
           <label className="field">

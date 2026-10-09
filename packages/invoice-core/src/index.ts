@@ -8,7 +8,8 @@ const date = z.iso.date();
 export const lineSchema = z
   .object({
     description: z.string().trim().min(1).max(1000),
-    quantity: decimalSchema.refine((v) => new D(v).gt(0)),
+    // Only invoke Decimal after the syntax check succeeds (empty/OCR input is untrusted).
+    quantity: decimalSchema.pipe(z.string().refine((v) => new D(v).gt(0))),
     unitPrice: decimalSchema,
     unit: z.enum(['C62', 'HUR', 'DAY']),
     vatRate: z.enum(['19', '7']),
@@ -209,6 +210,8 @@ function validationMessage(path: string, custom?: string): string {
     quantity:
       'Geben Sie eine positive Menge mit höchstens sechs Nachkommastellen ein.',
     unitPrice: 'Geben Sie einen gültigen Nettopreis ein.',
+    unit: 'Wählen Sie die Einheit für diese Leistung aus.',
+    vatRate: 'Wählen Sie den zutreffenden Umsatzsteuersatz aus.',
     allowance: 'Geben Sie einen gültigen Nachlass ein.',
     charge: 'Geben Sie einen gültigen Zuschlag ein.',
     issueDate: 'Geben Sie ein gültiges Rechnungsdatum ein.',

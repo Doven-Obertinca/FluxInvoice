@@ -9,10 +9,14 @@ import {
   type PaymentDetails,
   type Suggestions,
 } from '@flux/document-import';
-import { displayMoney, type InvoiceInput } from '@flux/invoice-core';
+import { displayMoney } from '@flux/invoice-core';
 import { readDocument, type ReadDocument } from '../lib/document-reader';
 import { searchCustomers } from '../lib/actions';
-import { InvoiceEditor, type InvoiceEditorProps } from './invoice-editor';
+import {
+  InvoiceEditor,
+  type InvoiceEditorProps,
+  type InvoiceFormInput,
+} from './invoice-editor';
 import { QrCamera } from './qr-camera';
 import { Button } from './ui/button';
 
@@ -34,7 +38,7 @@ export function InvoiceImport({ customers, seller, today }: Props) {
   const [customerOptions, setCustomerOptions] = useState(customers);
   const [query, setQuery] = useState('');
   const [searching, setSearching] = useState(false);
-  const [draft, setDraft] = useState<InvoiceInput | null>(null);
+  const [draft, setDraft] = useState<InvoiceFormInput | null>(null);
   const [previewPage, setPreviewPage] = useState(0);
   const controller = useRef<AbortController | null>(null);
   const heading = useRef<HTMLHeadingElement>(null);
@@ -157,9 +161,9 @@ export function InvoiceImport({ customers, seller, today }: Props) {
           </p>
           {!suggestions?.lines.length && (
             <p>
-              Keine vollständigen Positionen übernommen. Menge 1, Einheit Stunde
-              und 19 % sind Editor-Voreinstellungen; bitte passend zu Ihren
-              Leistungen ändern.
+              Keine vollständigen Positionen übernommen. Menge, Einheit,
+              Nettopreis und Umsatzsteuer bleiben leer, bis Sie diese Angaben
+              selbst ergänzen.
             </p>
           )}
           <details>
@@ -172,6 +176,7 @@ export function InvoiceImport({ customers, seller, today }: Props) {
           seller={seller}
           initial={draft}
           importedGross={sourceGross}
+          requireExplicitValues
         />
       </>
     );
@@ -183,9 +188,9 @@ export function InvoiceImport({ customers, seller, today }: Props) {
       <div className="page-heading">
         <div>
           <p className="eyebrow">VON DER VORLAGE ZUM ENTWURF</p>
-          <h1>Brief oder QR-Code lesen</h1>
+          <h1>Aus Dokument erstellen</h1>
           <p className="muted">
-            Foto oder PDF auswählen, Angaben prüfen und Ihre Rechnung
+            PDF, Foto oder QR-Code einlesen und daraus einen Rechnungsentwurf
             vorbereiten.
           </p>
         </div>
@@ -201,7 +206,7 @@ export function InvoiceImport({ customers, seller, today }: Props) {
               checked={mode === 'letter'}
               onChange={() => setMode('letter')}
             />
-            <FileUp size={18} /> Brief / Dokument
+            <FileUp size={18} /> PDF / Foto
           </label>
           <label>
             <input
@@ -550,8 +555,8 @@ export function InvoiceImport({ customers, seller, today }: Props) {
                     setDraft({
                       customerId,
                       issueDate: today,
-                      dueDate: today,
-                      serviceDate: suggestions?.serviceDate || today,
+                      dueDate: '',
+                      serviceDate: suggestions?.serviceDate || '',
                       currency: 'EUR',
                       buyerReference: suggestions?.buyerReference ?? '',
                       notes: '',
@@ -561,10 +566,10 @@ export function InvoiceImport({ customers, seller, today }: Props) {
                         : [
                             {
                               description: '',
-                              quantity: '1',
-                              unitPrice: '0',
-                              unit: 'HUR',
-                              vatRate: '19',
+                              quantity: '',
+                              unitPrice: '',
+                              unit: '',
+                              vatRate: '',
                               allowance: '0',
                               charge: '0',
                             },
@@ -573,7 +578,7 @@ export function InvoiceImport({ customers, seller, today }: Props) {
                     window.scrollTo({ top: 0 });
                   }}
                 >
-                  Im Rechnungseditor prüfen <ArrowRight size={16} />
+                  Geprüfte Angaben im Editor öffnen <ArrowRight size={16} />
                 </Button>
                 <p className="field-hint">
                   Noch keine Speicherung, Rechnungsnummer oder Finalisierung.

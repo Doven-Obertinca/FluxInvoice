@@ -1,3 +1,6 @@
+import { createHash } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
+import { exerciseIncoming } from './incoming-workflow';
 import { exerciseImports } from './import-workflow';
 import AxeBuilder from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
@@ -158,6 +161,36 @@ test('sign up, configure company, create customer, save and validate a mixed-tax
     page.getByText('Aktion erforderlich', { exact: true }),
   ).toBeVisible({ timeout: 30000 });
   await review(page, 'invoice-invalid');
+  const invalidUrl = page.url();
+  await expect(
+    page.getByText('Erfragen Sie die Referenz beim Empfänger.', {
+      exact: false,
+    }),
+  ).toBeVisible();
+  await page.goto('/invoices/attention');
+  await expect(
+    page.getByRole('cell', {
+      name: 'E-Rechnungsprüfung fehlgeschlagen',
+      exact: true,
+    }),
+  ).toBeVisible();
+  await review(page, 'attention-failed');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(
+    page
+      .locator('.attention-mobile')
+      .getByText('E-Rechnungsprüfung fehlgeschlagen', { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page
+      .locator('.attention-mobile')
+      .getByText('Angaben korrigieren und erneut prüfen →'),
+  ).toBeVisible();
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page
+    .getByRole('link', { name: 'Angaben korrigieren und erneut prüfen' })
+    .click();
+  await expect(page).toHaveURL(invalidUrl);
   await page.getByRole('button', { name: 'Zum Feld', exact: true }).click();
   await expect(
     page.getByLabel('Kundenreferenz', { exact: true }),
@@ -186,6 +219,24 @@ test('sign up, configure company, create customer, save and validate a mixed-tax
     page.getByText('E-Rechnung bereit', { exact: true }),
   ).toBeVisible({ timeout: 30000 });
   await review(page, 'invoice-ready');
+  const readyUrl = page.url();
+  await page.goto('/invoices/attention');
+  await expect(
+    page.getByRole('heading', {
+      name: 'Kein Handlungsbedarf auf dieser Seite',
+    }),
+  ).toBeVisible();
+  await review(page, 'attention-empty');
+  await page.keyboard.press('Control+k');
+  await page.getByLabel('Befehl suchen').fill('991-12345-07');
+  await expect(
+    page.getByRole('button', { name: /Rechnung Entwurf · Kontur/ }),
+  ).toBeVisible();
+  await review(page, 'workspace-search');
+  await page.getByLabel('Befehl suchen').focus();
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Enter');
+  await expect(page).toHaveURL(readyUrl);
   await page.getByRole('button', { name: 'Finalisieren', exact: true }).click();
   await expect(page.getByRole('dialog')).toBeVisible();
   await page.screenshot({ path: 'test-results/visual/finalize-dialog.png' });
@@ -206,6 +257,70 @@ test('sign up, configure company, create customer, save and validate a mixed-tax
   await expect(
     page.getByRole('button', { name: 'Entwurf speichern' }),
   ).toHaveCount(0);
+  await page
+    .getByRole('button', { name: 'Rechnung senden', exact: true })
+    .click();
+  const composer = page.getByRole('dialog');
+  await expect(composer.getByLabel('Empfänger')).toHaveValue(
+    'kontur@example.test',
+  );
+  await expect(composer.getByLabel('Betreff')).toHaveValue(/Rechnung NL-2026/);
+  await expect(composer.getByLabel('Nachricht')).toHaveValue(
+    /Vielen Dank für die Zusammenarbeit/,
+  );
+  await expect(composer.getByText(/Finalisierte XRechnung/)).toBeVisible();
+  const defaultSubject = await composer.getByLabel('Betreff').inputValue();
+  const deliverySubject = defaultSubject + ' · Versandprüfung ' + Date.now();
+  await composer.getByLabel('Betreff').fill(deliverySubject);
+  await review(page, 'email-composer');
+  await composer.getByRole('button', { name: 'Vorschau', exact: true }).click();
+  await expect(
+    composer.getByText('An: kontur@example.test', { exact: true }),
+  ).toBeVisible();
+  await composer
+    .getByRole('button', { name: 'Rechnung senden', exact: true })
+    .click();
+  await expect(composer).not.toBeVisible();
+  await expect(
+    page.getByText('Übermittelt · Zustellung noch nicht bestätigt', {
+      exact: true,
+    }),
+  ).toBeVisible({ timeout: 30000 });
+  await expect(
+    page.getByText('E-Mail übermittelt', { exact: false }),
+  ).toBeVisible();
+  const mailbox = await page.request.get(
+    'http://127.0.0.1:8025/api/v1/messages',
+  );
+  expect(mailbox.ok()).toBe(true);
+  const mails = await mailbox.json();
+  const delivered = mails.messages.find(
+    (m: { To: { Address: string }[]; Subject: string }) =>
+      m.To.some((t) => t.Address === 'kontur@example.test') &&
+      m.Subject === deliverySubject,
+  );
+  expect(delivered).toBeTruthy();
+  const received = await (
+    await page.request.get(
+      'http://127.0.0.1:8025/api/v1/message/' + delivered.ID,
+    )
+  ).json();
+  expect(received.Text).toContain('Vielen Dank');
+  expect(received.HTML).toContain('Versendet über ERechno');
+  expect(received.Attachments).toHaveLength(1);
+  expect(received.Attachments[0].FileName).toBe(file.suggestedFilename());
+  expect(received.Attachments[0].Checksums.SHA256).toBe(
+    createHash('sha256')
+      .update(await readFile((await file.path())!))
+      .digest('hex'),
+  );
+  await page
+    .getByRole('button', { name: 'Erneut senden', exact: true })
+    .click();
+  await expect(composer.getByLabel('Betreff')).toHaveValue(defaultSubject);
+  await composer
+    .getByRole('button', { name: 'Abbrechen', exact: true })
+    .click();
   await page.screenshot({
     path: 'test-results/invoice-desktop.png',
     fullPage: true,
@@ -225,6 +340,7 @@ test('sign up, configure company, create customer, save and validate a mixed-tax
     ['dashboard', '/dashboard'],
     ['invoices', '/invoices'],
     ['settings-company', '/settings/company'],
+    ['settings-email', '/settings/email'],
     ['settings-members', '/settings/members'],
   ] as const) {
     await page.goto(path);
@@ -236,7 +352,40 @@ test('sign up, configure company, create customer, save and validate a mixed-tax
   await page.keyboard.press('ArrowDown');
   await page.keyboard.press('Enter');
   await expect(page).toHaveURL(/invoices$/);
+  await page.keyboard.press('Control+k');
+  await page.getByLabel('Befehl suchen').fill('Kontur');
+  await expect(
+    page.getByRole('button', { name: /Kunde Kontur/ }),
+  ).toBeVisible();
+  await page.getByLabel('Befehl suchen').fill('351,00');
+  await expect(
+    page.getByRole('button', { name: /Rechnung NL-2026/ }),
+  ).toBeVisible();
+  await expect(page.getByRole('button', { name: /Kunde Kontur/ })).toHaveCount(
+    0,
+  );
+  await page.getByLabel('Befehl suchen').fill('not-found-%_');
+  await expect(
+    page.getByRole('status').filter({ hasText: '0 Treffer' }),
+  ).toBeVisible();
+  await page.keyboard.press('Escape');
+  // A failed read must show a retryable state, not old tenant result data.
+  await page.route('**/invoices', (route) =>
+    route.request().method() === 'POST' ? route.abort() : route.continue(),
+  );
+  await page.keyboard.press('Control+k');
+  await page.getByLabel('Befehl suchen').fill('Kontur');
+  await expect(
+    page.getByText('Suche nicht verfügbar. Bitte erneut versuchen.'),
+  ).toBeVisible();
+  await page.unroute('**/invoices');
+  await page.getByLabel('Befehl suchen').fill('Kontur Werkstatt');
+  await expect(
+    page.getByRole('button', { name: /Kunde Kontur/ }),
+  ).toBeVisible();
+  await page.keyboard.press('Escape');
   await exerciseImports(page);
+  await exerciseIncoming(page);
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.getByRole('button', { name: 'Abmelden' }).click();
   await expect(page).toHaveURL(/sign-in/);

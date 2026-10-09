@@ -224,3 +224,23 @@ describe('security primitives', () => {
     ).toBe(false);
   });
 });
+
+it('unresolved document suggestions cannot pass the domain boundary', () => {
+  for (const field of ['quantity', 'unitPrice', 'unit', 'vatRate']) {
+    const unresolved = {
+      ...input,
+      lines: [{ ...input.lines[0], [field]: '' }],
+    };
+    expect(invoiceInputSchema.safeParse(unresolved).success).toBe(false);
+    expect(
+      validate(unresolved).some(
+        (issue) => issue.fieldPath === `lines.0.${field}`,
+      ),
+    ).toBe(true);
+  }
+  for (const field of ['dueDate', 'serviceDate']) {
+    expect(
+      invoiceInputSchema.safeParse({ ...input, [field]: '' }).success,
+    ).toBe(false);
+  }
+});

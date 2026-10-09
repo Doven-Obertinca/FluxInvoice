@@ -66,3 +66,17 @@ Safe structured logs record request correlation, operation, result, duration and
 ## Reviewed document input
 
 The later letter/QR extension adds `packages/document-import` for pure bounded extraction and EPC parsing, and a client-only reader/review page at `/invoices/import`. OCR, PDF and QR libraries are lazy-loaded with prepared same-origin assets. Source text and previews are ephemeral. Only explicit user-reviewed fields enter the existing editor and unchanged save/validate/finalize protocol; no invoice number, bank master data, tenant identity or state is imported. See [document import decisions](docs/DOCUMENT-IMPORT.md).
+
+The product presents this alternative as **Aus Dokument erstellen**, alongside the primary **Neue Rechnung** action. Missing imported financial/date values stay blank in incomplete UI form state; the strict invoice input schema and server service still reject missing values. A future incoming XML workflow must use its own direction, model, permissions and original-artifact lifecycle, as specified in [the boundary ADR](docs/adr/DOCUMENT-DRAFTS.md). It is not implemented by this extension.
+
+## Product-intelligence read workflows
+
+The October 2026 product-intelligence iteration adds authenticated workspace discovery and an outgoing attention queue without a new fiscal lifecycle or migration. Search returns at most eight invoice snapshots and eight customer records, with fixed local destinations and no source documents or bank details. Literal wildcard escaping and narrowly recognized decimal strings prevent accidental broad/ambiguous queries. Server Actions derive the principal and log only operation metadata. The client debounces requests, suppresses superseded responses, clears results when changing the query, and exposes retryable failures.
+
+The attention query selects latest current-revision XRechnung evidence and processing jobs within tenant ownership; active retries suppress old validation failures. It observes processing failures, failed validation and overdue issued invoices independently from payment confirmation. Calendar comparison uses Europe/Berlin. Pagination is bounded at 25 rows with deterministic ordering. It never marks paid, sends reminders or changes fiscal state. Incoming records remain outside this query and require the separate model described in the document-drafts ADR.
+
+Correction guidance is product metadata, not a validator or automatic repair engine. It links to the exact customer record or company settings and explains that draft snapshots must be saved again. Unknown fields do not expose a nonfunctional field-jump button. Existing official validation, permissions, version guards and finalization remain authoritative. See [research](docs/PRODUCT-RESEARCH-2026.md), [roadmap](docs/PRODUCT-ROADMAP-2026.md) and [delivery evidence](docs/PRODUCT-IMPLEMENTATION-REPORT.md).
+
+## Separately authorized incoming workflow
+
+The subsequent inbox extension implements the separate domain required above: `/incoming`, tenant-owned immutable originals, append-only checks, dedicated permissions and asynchronous archive/validation processing. `packages/incoming` projects UBL/CII without applying the outgoing fiscal schema. Approval uses current validation evidence and explicit business review; it neither issues an invoice nor initiates payment. Future ingestion channels share the intake/outbox boundary. See [incoming architecture and delivery evidence](docs/INCOMING-INVOICES.md).

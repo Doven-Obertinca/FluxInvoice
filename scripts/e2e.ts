@@ -26,6 +26,7 @@ try {
   const env = {
     ...process.env,
     APP_ENV: 'test',
+    SMTP_URL: process.env.SMTP_URL ?? 'smtp://127.0.0.1:1025',
     DATABASE_URL: url.toString(),
     BETTER_AUTH_URL: 'http://127.0.0.1:3100',
     BETTER_AUTH_SECRET: randomUUID() + randomUUID(),

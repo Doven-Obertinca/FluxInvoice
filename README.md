@@ -84,8 +84,18 @@ No exemptions, reverse charge, credit notes, cross-border treatment, self-billin
 
 Local archives are not immutable regulatory storage. Staging/production require `ARCHIVE_MODE=S3_OBJECT_LOCK`, region, bucket and KMS key configuration. A queued job requires the separate worker; a stalled worker does not mean an invoice was finalized. The [deployment runbook](docs/DEPLOYMENT.md) covers installation, IAM, reconciliation and remaining staging assurance.
 
-## Letter, PDF and QR import
+## Aus Dokument erstellen
 
-Use **Rechnungen → Brief / QR-Code lesen** to read a photo/PDF or scan a QR code, review its contents and prepare an editable outgoing invoice. OCR and QR decoding run locally in the browser. Payment codes never set VAT or replace your company bank details. Save, validate and finalize through the existing invoice workflow. See [supported formats, limits and privacy](docs/DOCUMENT-IMPORT.md).
+Keep **Neue Rechnung** as the primary creation workflow. Use **Rechnungen → Aus Dokument erstellen** to read a photo/PDF or scan a QR code, review its contents and prepare an editable outgoing invoice. OCR and QR decoding run locally in the browser. Payment codes never set VAT or replace your company bank details. Save, validate and finalize through the existing invoice workflow. See [supported formats, limits and privacy](docs/DOCUMENT-IMPORT.md).
 
 Reader assets are prepared automatically by root `npm run dev` and `npm run build`; `npm run reader:prepare` is available separately. Include `apps/web/public/reader` in deployment. No database migration or external recognition credentials are needed.
+
+### Product-intelligence iteration
+
+Cmd/Ctrl+K now searches saved invoices and customers by name, invoice number, buyer reference, VAT ID or exact EUR amount. The outgoing **Handlungsbedarf** queue is available from the dashboard and command palette. It separates current validation/processing failures from overdue issued invoices; correction guidance explains the next action and snapshot refresh requirements.
+
+See the [2026 research](docs/PRODUCT-RESEARCH-2026.md), [prioritized roadmap](docs/PRODUCT-ROADMAP-2026.md), [DATEV strategy](docs/DATEV-INTEGRATION-STRATEGY.md) and [implementation report](docs/PRODUCT-IMPLEMENTATION-REPORT.md). DATEV automated handoff remains a roadmap item.
+
+## Incoming E-Rechnungen
+
+The separately authorized **Eingangsrechnungen** workflow preserves existing originals, displays UBL/CII and embedded hybrid XML, records validation evidence and requires explicit business review before approval. It is separate from creating an outgoing draft. Apply migrations and run the worker. Official validation is currently limited to the supported XRechnung profile; other readable profiles cannot be approved. See the [incoming implementation report](docs/INCOMING-INVOICES.md) for security, deployment, format limits and verification.

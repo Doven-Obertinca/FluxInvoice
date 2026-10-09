@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import {
   pgTable,
+  customType,
   pgEnum,
   uuid,
   text,
@@ -641,3 +642,162 @@ export const documentChecks = pgTable(
     ),
   ],
 );
+
+// Original fiscal bytes are authoritative. Parsed JSON is a disposable, versioned
+// read projection; it is never passed to the outgoing invoice command.
+const binary = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType: () => 'bytea',
+});
+export const incomingDocuments = pgTable(
+  'incoming_documents',
+  {
+    id: id(),
+    organizationId: tenant(),
+    actorId: text('actor_id').notNull(),
+    requestKey: uuid('request_key').notNull(),
+    requestHash: text('request_hash').notNull(),
+    source: text('source').notNull(),
+    filename: text('filename').notNull(),
+    kind: text('kind').notNull(),
+    original: binary('original').notNull(),
+    sha256: text('sha256').notNull(),
+    size: integer('size').notNull(),
+    receivedAt: created('received_at'),
+    state: text('state').notNull().default('RECEIVED'),
+    objectKey: text('object_key'),
+    objectVersion: text('object_version'),
+    archiveMode: text('archive_mode'),
+    retainUntil: timestamp('retain_until', { withTimezone: true }).notNull(),
+    parserVersion: text('parser_version'),
+    parsed:
+      jsonb('parsed').$type<import('../../incoming/src/parser').IncomingView>(),
+    validation: text('validation').notNull().default('PENDING'),
+    profileId: text('profile_id'),
+    manifestHash: text('manifest_hash'),
+    reportHash: text('report_hash'),
+    issues: jsonb('issues')
+      .$type<import('../../einvoice/src/semantic').Issue[]>()
+      .notNull()
+      .default([]),
+    errorCode: text('error_code'),
+    approvedBy: text('approved_by'),
+    approvedAt: timestamp('approved_at', { withTimezone: true }),
+  },
+  (t) => [
+    unique().on(t.organizationId, t.id),
+    unique().on(t.organizationId, t.requestKey),
+    index('incoming_tenant_received').on(t.organizationId, t.receivedAt, t.id),
+    check(
+      'incoming_bounds',
+      sql`${t.size} > 0 AND ${t.size} <= 2097152 AND octet_length(${t.original}) = ${t.size}`,
+    ),
+    check(
+      'incoming_state',
+      sql`${t.state} IN ('RECEIVED','REVIEW','ERROR','APPROVED')`,
+    ),
+    check(
+      'incoming_validation',
+      sql`${t.validation} IN ('PENDING','VALID','INVALID','UNSUPPORTED','ERROR')`,
+    ),
+    check('incoming_kind', sql`${t.kind} IN ('xml','pdf')`),
+    check(
+      'incoming_source',
+      sql`${t.source} IN ('UPLOAD','EMAIL','API','PEPPOL')`,
+    ),
+  ],
+);
+export const incomingChecks = pgTable(
+  'incoming_checks',
+  {
+    id: id(),
+    organizationId: tenant(),
+    incomingId: uuid('incoming_id').notNull(),
+    createdAt: created(),
+    validation: text('validation').notNull(),
+    profileId: text('profile_id'),
+    manifestHash: text('manifest_hash'),
+    reportHash: text('report_hash'),
+    issues: jsonb('issues')
+      .$type<import('../../einvoice/src/semantic').Issue[]>()
+      .notNull(),
+    parserVersion: text('parser_version').notNull(),
+    errorCode: text('error_code'),
+  },
+  (t) => [
+    foreignKey({
+      columns: [t.organizationId, t.incomingId],
+      foreignColumns: [incomingDocuments.organizationId, incomingDocuments.id],
+    }),
+    index('incoming_checks_document').on(
+      t.organizationId,
+      t.incomingId,
+      t.createdAt,
+    ),
+  ],
+);
+
+export const emailSettings = pgTable('email_settings', {
+  organizationId: uuid('organization_id')
+    .primaryKey()
+    .references(() => organizations.id),
+  settings: jsonb('settings')
+    .$type<import('../../application/src/email-template').MailSettings>()
+    .notNull(),
+});
+export const invoiceDeliveries = pgTable(
+  'invoice_deliveries',
+  {
+    id: uuid('id').primaryKey(),
+    organizationId: tenant(),
+    invoiceId: invoiceId(),
+    documentId: uuid('document_id').notNull(),
+    actorId: text('actor_id').notNull(),
+    requestId: uuid('request_id').notNull(),
+    requestKey: uuid('request_key').notNull(),
+    requestHash: text('request_hash').notNull(),
+    channel: text('channel').notNull().default('EMAIL'),
+    status: text('status').notNull().default('QUEUED'),
+    recipient: text('recipient').notNull(),
+    subject: text('subject').notNull(),
+    message: text('message').notNull(),
+    senderName: text('sender_name').notNull(),
+    replyTo: text('reply_to').notNull(),
+    attachmentHash: text('attachment_hash').notNull(),
+    filename: text('filename').notNull(),
+    providerId: text('provider_id'),
+    provider: text('provider'),
+    errorCode: text('error_code'),
+    claimedAt: timestamp('claimed_at', { withTimezone: true }),
+    createdAt: created(),
+    updatedAt: created('updated_at'),
+    resendOf: uuid('resend_of'),
+  },
+  (t) => [
+    unique().on(t.organizationId, t.requestKey),
+    foreignKey({
+      columns: [t.organizationId, t.invoiceId],
+      foreignColumns: [invoices.organizationId, invoices.id],
+    }),
+    foreignKey({
+      columns: [t.organizationId, t.documentId],
+      foreignColumns: [invoiceDocuments.organizationId, invoiceDocuments.id],
+    }),
+    foreignKey({ columns: [t.resendOf], foreignColumns: [t.id] }),
+    check(
+      'delivery_channel',
+      sql`${t.channel} IN ('EMAIL','PEPPOL','API','CUSTOMER_PORTAL')`,
+    ),
+    check(
+      'delivery_status',
+      sql`${t.status} IN ('QUEUED','SUBMITTED','DELIVERED','BOUNCED','FAILED')`,
+    ),
+    index('deliveries_invoice').on(t.organizationId, t.invoiceId, t.createdAt),
+  ],
+);
+export const deliveryReceipts = pgTable('delivery_receipts', {
+  eventId: text('event_id').primaryKey(),
+  attemptId: uuid('attempt_id')
+    .notNull()
+    .references(() => invoiceDeliveries.id),
+  createdAt: created(),
+});

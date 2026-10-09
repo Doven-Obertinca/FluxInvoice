@@ -4,32 +4,59 @@ import { members } from '@flux/db';
 import { AppError } from '@flux/shared';
 export type Role = 'OWNER' | 'ADMIN' | 'ACCOUNTANT' | 'MEMBER' | 'VIEWER';
 export type Permission =
+  | 'incoming:read'
+  | 'incoming:import'
+  | 'incoming:approve'
   | 'read'
   | 'customer:write'
   | 'invoice:write'
+  | 'invoice:send'
   | 'invoice:finalize'
   | 'company:write'
   | 'members:read';
 const grants: Record<Role, readonly Permission[]> = {
   OWNER: [
     'read',
+    'incoming:read',
+    'incoming:import',
+    'incoming:approve',
     'customer:write',
     'invoice:write',
     'invoice:finalize',
+    'invoice:send',
     'company:write',
     'members:read',
   ],
   ADMIN: [
     'read',
+    'incoming:read',
+    'incoming:import',
+    'incoming:approve',
     'customer:write',
     'invoice:write',
     'invoice:finalize',
+    'invoice:send',
     'company:write',
     'members:read',
   ],
-  ACCOUNTANT: ['read', 'customer:write', 'invoice:write', 'invoice:finalize'],
-  MEMBER: ['read', 'customer:write', 'invoice:write'],
-  VIEWER: ['read'],
+  ACCOUNTANT: [
+    'incoming:read',
+    'incoming:import',
+    'incoming:approve',
+    'read',
+    'customer:write',
+    'invoice:write',
+    'invoice:finalize',
+    'invoice:send',
+  ],
+  MEMBER: [
+    'incoming:read',
+    'incoming:import',
+    'read',
+    'customer:write',
+    'invoice:write',
+  ],
+  VIEWER: ['incoming:read', 'read'],
 };
 export function can(role: Role, permission: Permission) {
   return grants[role].includes(permission);

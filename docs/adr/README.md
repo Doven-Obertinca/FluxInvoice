@@ -31,3 +31,5 @@ The legacy Drizzle loader uses esbuild's transform API; a global 0.28.2 override
 ## Phase 2 decisions
 
 See [Phase 2 ADRs](PHASE-2.md) for semantic/profile versioning, XML serialization, authoritative Java validation, archive trust, PostgreSQL/object-storage recovery, and the product design system.
+
+See [document-to-draft boundary](DOCUMENT-DRAFTS.md) for reviewed outgoing invoice preparation and separation from any future inbound E-Rechnung workflow.

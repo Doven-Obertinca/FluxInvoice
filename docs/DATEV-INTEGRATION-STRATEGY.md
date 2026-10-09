@@ -1,0 +1,35 @@
+# DATEV interoperability strategy — 7 October 2026
+
+Status: researched architecture and supported manual handoff; **no DATEV connector, certification, accounting export or partnership is implemented**.
+
+## Ownership and boundary
+
+FluxInvoice owns reviewed outgoing drafts, exact decimal calculation, official versioned validation, immutable issuance, original XML downloads, audit and processing recovery. Future incoming intake owns separately preserved original bytes and explicit review. DATEV/the adviser owns chart-of-accounts mapping, ledger posting, tax interpretation, closing and statutory accounting. FluxInvoice must not guess SKR accounts, tax keys, debtor/creditor numbers or booking periods.
+
+Current practical handoff: finalize → download the exact integrity-verified XRechnung → user/adviser uploads through their configured DATEV import workflow → verify receipt and content in DATEV. A Flux download is **not** a DATEV acknowledgement or a booking. The [official collaboration overview](https://www.datev.de/web/de/steuerberatung/loesungen/rechnungswesen/belege-und-daten-digital-in-die-kanzlei-uebertragen/digital-zusammenarbeiten) lists XRechnung import/visualization and supported channels; channel-specific restrictions must be checked (its Upload Mail description is limited to ZUGFeRD). No claim that arbitrary email imports XML.
+
+## Official options researched
+
+| Interface                                                                                                                                                            | Intended boundary                                                                                                   | Decision                                                                                                              |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| [Rechnungsdatenservice 1.0](https://www.datev.de/web/de/shop/produkt-details/datev-rechnungsdatenservice-1)                                                          | Structured document data plus documents to Unternehmen online, onward booking proposals                             | Preferred future handoff; fits document ownership                                                                     |
+| [XML-Schnittstelle online / dxso file requirements](https://developer.datev.de/de/product-detail/accounting-dxso-jobs/2.0/documentation/interface-requirements-file) | Document-data files via Belegtransfer or service; current specification calls for newer Belegsatzdatendatei variant | Implement exact official schema only after onboarding and sample acceptance; XRechnung XML is not this wrapper format |
+| [Buchungsdatenservice / cloud requirements](https://developer.datev.de/de/guides/interface-requirements)                                                             | CSV master/transaction accounting data and document linkage into Rechnungswesen                                     | Defer until adviser-approved account mappings; no arbitrary “DATEV CSV”                                               |
+| DATEV document-only channels                                                                                                                                         | User-controlled original handoff                                                                                    | Existing manual route; avoid guessed accounting proposals                                                             |
+| TRAFFIQX Invoice API, listed in official cloud requirements                                                                                                          | Network exchange with E-Rechnungsplattform/providers                                                                | Separate future transmission opportunity; provider contract and authorization required                                |
+
+Sources retrieved 7 October 2026. Some developer portal content is indexed but direct rendering requires its client application; gated specifications/credentials have not been obtained. No private API or reverse engineering.
+
+## Future delivery contract (design, not an exposed API)
+
+A tenant-owned HandoffBatch contains immutable item identities (direction, document ID/version/hash, invoice identity), destination connection, explicit period selection and mapping version. Each item progresses prepared → queued → transmitted → acknowledged or rejected; retryable failure is distinct from rejection. Provider acknowledgements never change invoice fiscal content or imply paid/posted status. Store provider IDs and deduplicate deliveries; manual replay keeps the original operation identity.
+
+A connection requires explicit tenant admin setup and provider-granted access. Encrypt secrets, rotate/revoke, redact tokens and document payloads, use fixed provider endpoints, bounded requests and tenant-scoped audit. Never accept arbitrary callback/fetch URLs without SSRF controls. Adviser access is least-privilege per tenant, time/revocation aware, with separately authorized export; an email address is not authorization. Recheck membership at every operation.
+
+Before implementation: obtain official current schemas and permitted test access; agree client/adviser/financial-year/account identifiers; define optional fields without inventing values; verify original attachments and document links; test duplicate retry, partial batch rejection, credential expiry and revoked tenant membership. Reconcile item counts, sums by currency, hashes and receipt IDs. A completed transport batch is not a completed bookkeeping period.
+
+## Incoming and integration boundaries
+
+Incoming records retain external issuer and number, source channel, receipt timestamp, safe filename, detected type, original hash/version, parser version and validation evidence. Structured XML is interpreted before OCR; hybrid PDF is a comparison view, not permission to replace XML. Approval is a separate authorized event, not outgoing finalization. Corrections are requested from the issuer, not silently written into the original.
+
+Shop connectors should normalize explicit external order ID/version, parties, supplied tax treatment, lines, service dates, currency and source provenance into a reviewed draft command. Missing/unsupported tax cases fail with actionable errors. Mapping belongs in a connector, not invoice-core. External idempotency is tenant+connector+source-event scoped. API/webhook delivery needs scopes, quotas, signatures/timestamps, secret rotation, retries, replay logs and SSRF protection before public availability. Existing metadata tables and internal outbox alone do not constitute a public API.

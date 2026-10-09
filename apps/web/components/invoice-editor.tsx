@@ -7,6 +7,7 @@ import {
   calculate,
   displayMoney,
   normalizeDecimal,
+  invoiceInputSchema,
   validate,
   type InvoiceInput,
   type InvoiceLine,
@@ -23,12 +24,23 @@ interface Party {
   email: string;
   iban?: string | null;
 }
+// Editable form state can contain unknown values; only the domain schema may
+// turn it into an InvoiceInput. Imported values never receive guessed VAT/units.
+export type InvoiceFormInput = Omit<InvoiceInput, 'lines'> & {
+  lines: Array<
+    Omit<InvoiceLine, 'unit' | 'vatRate'> & {
+      unit: InvoiceLine['unit'] | '';
+      vatRate: InvoiceLine['vatRate'] | '';
+    }
+  >;
+};
 export interface InvoiceEditorProps {
+  requireExplicitValues?: boolean;
   importedGross?: string;
   customers: { id: string; name: string }[];
   seller: Party;
   buyer?: Party;
-  initial: InvoiceInput;
+  initial: InvoiceFormInput;
   id?: string;
   revision?: number;
   status?: string;
@@ -46,6 +58,7 @@ export function InvoiceEditor({
   frozen = false,
   number,
   importedGross,
+  requireExplicitValues = false,
 }: InvoiceEditorProps) {
   const workspace = useInvoiceDirty();
   const [input, setInput] = useState(initial);
@@ -61,12 +74,13 @@ export function InvoiceEditor({
   const issues = validate(input);
   let totals: ReturnType<typeof calculate> | null = null;
   try {
-    if (!issues.length) totals = calculate(input);
+    const parsed = invoiceInputSchema.safeParse(input);
+    if (parsed.success) totals = calculate(parsed.data);
   } catch {}
   const editable = !frozen && (status === 'DRAFT' || status === 'VALIDATED');
-  const update = <K extends keyof InvoiceInput>(
+  const update = <K extends keyof InvoiceFormInput>(
     field: K,
-    value: InvoiceInput[K],
+    value: InvoiceFormInput[K],
   ) => {
     setInput((old) => ({ ...old, [field]: value }));
     setDirty(true);
@@ -101,9 +115,9 @@ export function InvoiceEditor({
       <Link className="back-link" href="/invoices">
         <ArrowLeft size={14} /> Rechnungen
       </Link>
-      {!id && (
+      {!id && !requireExplicitValues && (
         <Link className="import-entry" href="/invoices/import">
-          Brief, PDF oder QR-Code als Vorlage lesen →
+          Aus Dokument erstellen →
         </Link>
       )}
       <div className="page-heading">
@@ -120,7 +134,12 @@ export function InvoiceEditor({
                 : 'Entwurf · noch keine ausgestellte Rechnung'}
           </p>
         </div>
-        <Button onClick={save} disabled={pending || !editable}>
+        <Button
+          onClick={save}
+          disabled={
+            pending || !editable || (requireExplicitValues && issues.length > 0)
+          }
+        >
           <Save size={16} />
           {pending ? 'Wird gespeichert …' : 'Entwurf speichern'}
         </Button>
@@ -128,6 +147,13 @@ export function InvoiceEditor({
       <div role="status" aria-live="polite">
         {message && <p className="notice">{message}</p>}
       </div>
+      {requireExplicitValues && issues.length > 0 && (
+        <p className="notice">
+          Noch nicht vollständig: Ergänzen Sie fehlende Daten, Mengen,
+          Einheiten, Nettopreise und Umsatzsteuer. Unter „Prüfung“ finden Sie
+          die betroffenen Felder. Erst danach können Sie den Entwurf speichern.
+        </p>
+      )}
       {importedGross && (
         <p className="notice" role="status">
           Bruttobetrag der Quelle: {displayMoney(importedGross)}.{' '}
@@ -282,11 +308,15 @@ export function InvoiceEditor({
                       <label className="field">
                         Einheit
                         <select
+                          id={`lines.${i}.unit`}
                           value={line.unit}
                           onChange={(e) =>
                             updateLine(i, 'unit', e.target.value)
                           }
                         >
+                          <option value="" disabled>
+                            Bitte wählen
+                          </option>
                           <option value="HUR">Stunde</option>
                           <option value="C62">Stück</option>
                           <option value="DAY">Tag</option>
@@ -310,11 +340,15 @@ export function InvoiceEditor({
                       <label className="field">
                         USt.
                         <select
+                          id={`lines.${i}.vatRate`}
                           value={line.vatRate}
                           onChange={(e) =>
                             updateLine(i, 'vatRate', e.target.value)
                           }
                         >
+                          <option value="" disabled>
+                            Bitte wählen
+                          </option>
                           <option value="19">19 %</option>
                           <option value="7">7 %</option>
                         </select>
@@ -366,10 +400,10 @@ export function InvoiceEditor({
                     ...input.lines,
                     {
                       description: '',
-                      quantity: '1',
-                      unitPrice: '0',
-                      unit: 'HUR',
-                      vatRate: '19',
+                      quantity: requireExplicitValues ? '' : '1',
+                      unitPrice: requireExplicitValues ? '' : '0',
+                      unit: requireExplicitValues ? '' : 'HUR',
+                      vatRate: requireExplicitValues ? '' : '19',
                       allowance: '0',
                       charge: '0',
                     },
@@ -487,7 +521,11 @@ export function InvoiceEditor({
                         <tr key={i}>
                           <td>
                             {l.description || 'Ihre Leistung'}
-                            <small>{l.vatRate} % USt.</small>
+                            <small>
+                              {l.vatRate
+                                ? `${l.vatRate} % USt.`
+                                : 'Umsatzsteuer noch festlegen'}
+                            </small>
                           </td>
                           <td className="numeric">{l.quantity}</td>
                           <td className="numeric">

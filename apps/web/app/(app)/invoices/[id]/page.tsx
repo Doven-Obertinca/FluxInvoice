@@ -1,3 +1,4 @@
+import { InvoiceDelivery } from '../../../../components/invoice-delivery';
 import { notFound } from 'next/navigation';
 import { AppError } from '@flux/shared';
 import { ZodError } from 'zod';
@@ -5,7 +6,13 @@ import { InvoiceWorkspace } from '../../../../components/invoice-workspace';
 import { IssuedInvoice } from '../../../../components/issued-invoice';
 import { authorize, can } from '@flux/auth';
 import { InvoiceLifecycle } from '../../../../components/invoice-lifecycle';
-import { principal, service, einvoice, db } from '../../../../lib/server';
+import {
+  principal,
+  service,
+  einvoice,
+  db,
+  delivery,
+} from '../../../../lib/server';
 import { InvoiceEditor } from '../../../../components/invoice-editor';
 import { toInput } from '@flux/application';
 export default async function Invoice({
@@ -44,6 +51,7 @@ export default async function Invoice({
         id={detail.invoice.id}
         revision={detail.invoice.revision}
         customer={buyer.name}
+        customerId={detail.invoice.customerId}
         payable={detail.invoice.payable}
         status={detail.invoice.status}
         pending={detail.invoice.finalizationPending}
@@ -54,6 +62,13 @@ export default async function Invoice({
         document={history.documents[0]}
         issues={detail.run?.profile === 'XRECHNUNG' ? detail.issues : []}
       />
+      {detail.invoice.finalizedAt && (
+        <InvoiceDelivery
+          id={detail.invoice.id}
+          attempts={await delivery.history(p, detail.invoice.id)}
+          canSend={can(membership.role, 'invoice:send')}
+        />
+      )}
       {detail.invoice.status === 'FINALIZED' ? (
         <IssuedInvoice detail={detail} document={history.documents[0]} />
       ) : (
@@ -79,6 +94,11 @@ export default async function Invoice({
                 <time>{e.createdAt.toLocaleString('de-DE')}</time>{' '}
                 {(
                   {
+                    'delivery.queued': 'E-Mail in Warteschlange',
+                    'delivery.submitted': 'E-Mail übermittelt',
+                    'delivery.delivered': 'E-Mail zugestellt',
+                    'delivery.bounced': 'Zustellung fehlgeschlagen',
+                    'delivery.failed': 'E-Mail-Versand fehlgeschlagen',
                     'invoice.created': 'Entwurf erstellt',
                     'invoice.updated': 'Entwurf gespeichert',
                     'invoice.finalized': 'Rechnung finalisiert',

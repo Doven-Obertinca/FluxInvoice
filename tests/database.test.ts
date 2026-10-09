@@ -316,3 +316,140 @@ describe('PostgreSQL tenant and transaction boundaries', () => {
     ).toHaveLength(1);
   });
 });
+
+describe('workspace discovery and attention', () => {
+  it('finds only tenant-owned invoice snapshots and customers with literal search and bounded results', async () => {
+    const uniqueCustomer = await service.createCustomer(a, {
+      ...customer,
+      name: 'Search%_Proof',
+      vatId: 'DE987654321',
+    });
+    const id = await service.saveInvoice(
+      a,
+      {
+        ...invoice(),
+        customerId: uniqueCustomer,
+        buyerReference: 'PO-NEEDLE-2026',
+      },
+      { idempotencyKey: randomUUID() },
+    );
+    for (const query of ['Search%_', 'PO-NEEDLE', 'DE987654321']) {
+      expect(
+        (await service.searchWorkspace(a, query)).some(
+          (r) => r.href === `/invoices/${id}`,
+        ),
+      ).toBe(true);
+      expect(await service.searchWorkspace(b, query)).toEqual([]);
+    }
+    const detail = await service.invoice(a, id);
+    expect(
+      (
+        await service.searchWorkspace(
+          a,
+          detail.invoice.payable.replace('.', ','),
+        )
+      ).some((r) => r.href === `/invoices/${id}`),
+    ).toBe(true);
+    expect(await service.searchWorkspace(a, "%' OR 1=1 --")).toEqual([]);
+    expect(await service.searchWorkspace(a, 'x')).toEqual([]);
+    expect((await service.searchWorkspace(viewer, 'Search%_')).length).toBe(2);
+    const spoof = { ...b, organizationId: a.organizationId };
+    await expect(
+      service.searchWorkspace(spoof, 'Search'),
+    ).rejects.toMatchObject({ code: 'AUTHORIZATION' });
+    await expect(service.attention(spoof)).rejects.toMatchObject({
+      code: 'AUTHORIZATION',
+    });
+    await expect(service.searchWorkspace(a, 'x'.repeat(101))).rejects.toThrow();
+    await expect(service.attention(a, 0)).rejects.toThrow();
+    // Snapshot search remains stable when mutable customer master data changes.
+    await service.updateCustomer(a, uniqueCustomer, {
+      ...customer,
+      name: 'Renamed customer',
+      vatId: '',
+    });
+    expect(
+      (await service.searchWorkspace(a, 'Search%_')).map((r) => r.href),
+    ).toEqual([`/invoices/${id}`]);
+  });
+  it('shows current failures, excludes corrected revisions, and does not mislabel overdue drafts', async () => {
+    const input = {
+      ...invoice(),
+      issueDate: '2025-01-01',
+      dueDate: '2025-01-02',
+      serviceDate: '2025-01-01',
+    };
+    const id = await service.saveInvoice(a, input, {
+      idempotencyKey: randomUUID(),
+    });
+    expect((await service.attention(a)).some((r) => r.id === id)).toBe(false);
+    const run = {
+      organizationId: a.organizationId,
+      invoiceId: id,
+      revision: 1,
+      profile: 'XRECHNUNG',
+      rulesetVersion: 'test',
+      valid: false,
+    };
+    await db
+      .insert(s.validationRuns)
+      .values({ ...run, createdAt: new Date('2026-01-01') });
+    expect(
+      (await service.attention(viewer)).find((r) => r.id === id)?.reason,
+    ).toBe('VALIDATION');
+    expect(await service.attention(b)).toEqual([]);
+    await db
+      .insert(s.validationRuns)
+      .values({ ...run, valid: true, createdAt: new Date('2026-01-02') });
+    expect((await service.attention(a)).some((r) => r.id === id)).toBe(false);
+    await db
+      .insert(s.validationRuns)
+      .values({ ...run, createdAt: new Date('2026-01-03') });
+    expect((await service.attention(a)).find((r) => r.id === id)?.reason).toBe(
+      'VALIDATION',
+    );
+    await service.saveInvoice(a, input, {
+      id,
+      revision: 1,
+      idempotencyKey: randomUUID(),
+    });
+    expect((await service.attention(a)).some((r) => r.id === id)).toBe(false);
+  });
+  it('surfaces processing failure but suppresses stale failures during an active retry', async () => {
+    const id = await service.saveInvoice(a, invoice(), {
+      idempotencyKey: randomUUID(),
+    });
+    await db.insert(s.validationRuns).values({
+      organizationId: a.organizationId,
+      invoiceId: id,
+      revision: 1,
+      profile: 'XRECHNUNG',
+      rulesetVersion: 'test',
+      valid: false,
+    });
+    const [job] = await db
+      .insert(s.einvoiceJobs)
+      .values({
+        organizationId: a.organizationId,
+        invoiceId: id,
+        revision: 1,
+        kind: 'VALIDATE',
+        state: 'FAILED',
+        actorId: a.userId,
+        requestId: randomUUID(),
+        profileId: 'test',
+        snapshotHash: '0'.repeat(64),
+        lastErrorCode: 'VALIDATOR_TIMEOUT',
+      })
+      .returning();
+    expect((await service.attention(a)).find((r) => r.id === id)?.reason).toBe(
+      'PROCESSING',
+    );
+    await db
+      .update(s.einvoiceJobs)
+      .set({ state: 'QUEUED' })
+      .where(eq(s.einvoiceJobs.id, job!.id));
+    expect((await service.attention(a)).some((r) => r.id === id)).toBe(false);
+    expect(await service.attention(a, 10000)).toEqual([]);
+  });
+});

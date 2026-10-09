@@ -1,6 +1,6 @@
-# Read a letter, PDF or QR code
+# Aus Dokument erstellen
 
-Added at the user's request after Phase 2. Open **Rechnungen → Brief / QR-Code lesen**, or use the link above a new invoice or the command palette.
+Added at the user's explicit request as an extension of the existing Phase 2 workflow. **Neue Rechnung** remains primary. Open **Rechnungen → Aus Dokument erstellen**, the alternative link above a new invoice, or the command palette. The screen explains: “PDF, Foto oder QR-Code einlesen und daraus einen Rechnungsentwurf vorbereiten.”
 
 1. Choose a photo/PDF, or select QR-Code and start the camera. Camera access requires browser permission and HTTPS (localhost also works).
 2. Review the original preview, extracted text and proposed values. Select the customer deliberately. Text corrections can be re-evaluated.
@@ -19,7 +19,7 @@ Reading a document never saves or finalizes an invoice. Incoming supplier invoic
   Position: Fachbuch | Menge: 1 | Einheit: C62 | Nettopreis: 50,00 | USt: 7 %
   ```
 
-  Arbitrary prose is shown for review; the parser does not invent financial lines. Missing lines are completed in the existing editor, whose normal quantity/unit/VAT defaults are explicitly disclosed. Source gross totals are compared with the editor's calculated total when available. Discounts and unsupported tax language generate attention messages; they are not automatically mapped.
+  Arbitrary prose is shown for review; the parser does not invent financial lines. Missing quantities, units, net prices, VAT rates, due dates and service dates stay blank in the import editor and must be explicitly completed before saving. Source gross totals are compared with the editor's calculated total when available. Discounts and unsupported tax language generate attention messages; they are not automatically mapped.
 
 - EPC/SEPA QR versions 001/002 with UTF-8 character set 1, plus labelled plain-text invoice details. EPC fields, amount bounds, IBAN checksum, field lengths, payload length and mutually exclusive remittance fields are checked. The implementation is a reader, not a bank's payment-validation or beneficiary-verification service. Other encodings, Swiss QR invoices, payment-app URLs and unknown dialects are explicitly unsupported.
 - QR codes can be read from uploaded images, rendered PDF pages or a live camera. Up to four codes per page are detected; the user selects which content to review when multiple codes are present. Dense, blurry or damaged codes may need a closer photo.
@@ -42,6 +42,8 @@ No database migration, cloud credentials or additional server endpoint is needed
 
 ## Verification
 
-The unit suite covers explicit/ambiguous extraction, decimal handling, malicious text, EPC bounds/checksums/unsupported variants, link refusal and file-header/resource guards. Browser coverage uses real OCR on a fictional photo and scanned PDF, text-PDF extraction, real generated QR rasters, imported-draft saving and official validation, invalid/encrypted/oversized files, cancellation, camera denial and a synthetic camera stream through the real decoder. The synthetic stream verifies track cleanup without accessing a person's camera. Browser requests are checked for external destinations. Desktop, tablet and mobile screenshots plus both-theme axe checks cover the new screens. Real mobile hardware and every camera/browser combination have not been certified.
+The unit suite covers explicit/ambiguous extraction, decimal handling, malicious text, EPC bounds/checksums/unsupported variants, link refusal and file-header/resource guards. Browser coverage uses real OCR on a fictional photo and scanned PDF, text-PDF extraction, real generated QR rasters, imported-draft saving and official validation, invalid/encrypted/oversized files, cancellation, camera denial and a synthetic camera stream through the real decoder. The synthetic stream verifies track cleanup after recognition, explicit stop, page hiding, client navigation and late permission resolution without accessing a person's camera. Cancellation during OCR initialization is tested through worker termination and a successful fresh read. Source edits reset acknowledgement, and incomplete financial/date fields cannot be saved. Browser requests are checked for external destinations. Desktop, tablet and mobile screenshots plus both-theme axe checks cover the new screens. Real mobile hardware and every camera/browser combination have not been certified.
 
-Test fixtures are described in [the fixture README](../tests/fixtures/document-import/README.md). Phase 2's report remains historical evidence of the completed fiscal engine; this import feature is a subsequent extension.
+Test fixtures are described in [the fixture README](../tests/fixtures/document-import/README.md). The [Phase 2 report](PHASE-2-REPORT.md) records the original fiscal-engine evidence and the completed, explicitly authorized document-input extension. [The boundary ADR](adr/DOCUMENT-DRAFTS.md) separates outgoing-draft preparation from a future incoming E-Rechnung workflow. No inbound management or Phase 3 feature has been implemented.
+
+Final verification on 7 October 2026: 95 unit/integration tests passed; full E2E suite 2 passed in 54.9 seconds; lint, strict types, production build, formatting and whitespace checks passed; production dependency audit found zero vulnerabilities.

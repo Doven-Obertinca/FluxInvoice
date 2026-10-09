@@ -7,7 +7,7 @@ environment();
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   logging: { incomingRequests: false },
-  experimental: { serverActions: { bodySizeLimit: '512kb' } },
+  experimental: { serverActions: { bodySizeLimit: '3mb' } },
   serverExternalPackages: ['pg', 'pino', 'nodemailer'],
   async headers() {
     return [

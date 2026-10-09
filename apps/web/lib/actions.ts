@@ -189,3 +189,104 @@ export async function requestEinvoice(
     p.requestId,
   );
 }
+
+export async function searchWorkspace(query: string) {
+  const p = await principal();
+  return perform(
+    'workspace.search',
+    () => service.searchWorkspace(p, query),
+    p.requestId,
+  );
+}
+
+export async function importIncoming(data: FormData) {
+  const p = await principal();
+  return perform(
+    'incoming.receive',
+    async () => {
+      const file = data.get('file');
+      if (!(file instanceof File) || !file.size || file.size > 2097152)
+        throw new AppError(
+          'VALIDATION',
+          'Bitte wählen Sie eine XML- oder PDF-Datei bis 2 MiB.',
+        );
+      const { incoming } = await import('./server');
+      const id = await incoming.receive(
+        p,
+        Buffer.from(await file.arrayBuffer()),
+        file.name,
+        z.uuid().parse(data.get('key')),
+      );
+      revalidatePath('/incoming');
+      return id;
+    },
+    p.requestId,
+  );
+}
+export async function checkIncoming(id: string) {
+  const p = await principal();
+  return perform(
+    'incoming.recheck',
+    async () => {
+      const { incoming } = await import('./server');
+      await incoming.revalidate(p, id);
+      revalidatePath(`/incoming/${id}`);
+      return true;
+    },
+    p.requestId,
+  );
+}
+export async function approveIncoming(
+  id: string,
+  checkId: string,
+  reviewed: boolean,
+) {
+  const p = await principal();
+  return perform(
+    'incoming.approve',
+    async () => {
+      const { incoming } = await import('./server');
+      await incoming.approve(p, id, checkId, reviewed);
+      revalidatePath(`/incoming/${id}`);
+      revalidatePath('/incoming');
+      return true;
+    },
+    p.requestId,
+  );
+}
+
+export async function composeDelivery(id: string) {
+  const p = await principal();
+  const { delivery } = await import('./server');
+  return perform(
+    'delivery.compose',
+    () => delivery.compose(p, id),
+    p.requestId,
+  );
+}
+export async function sendDelivery(id: string, input: unknown) {
+  const p = await principal();
+  const { delivery } = await import('./server');
+  return perform(
+    'delivery.send',
+    async () => {
+      const result = await delivery.enqueue(p, id, input);
+      revalidatePath(`/invoices/${id}`);
+      return result;
+    },
+    p.requestId,
+  );
+}
+export async function saveMailSettings(input: unknown) {
+  const p = await principal();
+  const { delivery } = await import('./server');
+  return perform(
+    'delivery.settings',
+    async () => {
+      await delivery.saveSettings(p, input);
+      revalidatePath('/settings/email');
+      return true;
+    },
+    p.requestId,
+  );
+}

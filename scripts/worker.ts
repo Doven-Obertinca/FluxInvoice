@@ -1,4 +1,7 @@
+import { DeliveryService } from '../packages/application/src/delivery';
+import { emailProvider } from '../packages/application/src/email-provider';
 import { resolve } from 'node:path';
+import { IncomingService } from '../packages/application/src/incoming';
 import { EinvoiceService } from '../packages/application/src/einvoice';
 import { complianceRuntime } from '../packages/application/src/runtime';
 import 'dotenv/config';
@@ -10,6 +13,12 @@ import { logOperation, metric } from '@flux/observability';
 const { db, pool } = connect(environment().DATABASE_URL);
 const runtime = complianceRuntime(resolve('.'));
 const einvoice = new EinvoiceService(
+  db,
+  pool,
+  runtime.validator,
+  runtime.archive,
+);
+const incoming = new IncomingService(
   db,
   pool,
   runtime.validator,
@@ -49,6 +58,11 @@ const handlers = Object.fromEntries(
     },
   ]),
 );
+const delivery = new DeliveryService(db, runtime.archive, emailProvider());
+handlers['delivery.requested'] = (job) =>
+  delivery.process(job.organizationId, job.entityId);
+handlers['incoming.process'] = (job) =>
+  incoming.process(job.organizationId, job.entityId);
 handlers['einvoice.requested'] = async (job) => {
   const started = performance.now();
   try {

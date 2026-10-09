@@ -1,4 +1,7 @@
+import { DeliveryService } from '../../../packages/application/src/delivery';
+import { emailProvider } from '../../../packages/application/src/email-provider';
 import { resolve } from 'node:path';
+import { IncomingService } from '../../../packages/application/src/incoming';
 import { EinvoiceService } from '../../../packages/application/src/einvoice';
 import { complianceRuntime } from '../../../packages/application/src/runtime';
 import { logOperation } from '@flux/observability';
@@ -108,3 +111,16 @@ export async function principal() {
     requestId: randomUUID(),
   };
 }
+
+export const incoming = new IncomingService(
+  db,
+  connection.pool,
+  runtime.validator,
+  runtime.archive,
+);
+
+export const delivery = new DeliveryService(
+  db,
+  runtime.archive,
+  emailProvider(),
+);

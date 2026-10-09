@@ -6,11 +6,13 @@ import Link from 'next/link';
 import { displayMoney } from '@flux/invoice-core';
 import { requestEinvoice } from '../lib/actions';
 import { Button } from './ui/button';
+import { correctionGuidance, finalizationBlocker } from '@flux/einvoice';
 import { useInvoiceDirty } from './invoice-workspace';
 export interface LifecycleProps {
   id: string;
   revision: number;
   customer: string;
+  customerId: string;
   payable: string;
   status: string;
   pending: boolean;
@@ -59,6 +61,15 @@ export function InvoiceLifecycle(p: LifecycleProps) {
       if (result.ok) setOpen(false);
       router.refresh();
     });
+  const blocker = finalizationBlocker({
+    finalized: !!p.document,
+    dirty,
+    active: !!active,
+    canFinalize: p.canFinalize,
+    pending: p.pending,
+    ready: p.ready,
+    failed: p.issues.some((i) => i.severity === 'ERROR'),
+  });
   return (
     <section className="lifecycle" aria-label="E-Rechnungsstatus">
       <div className="lifecycle-status">
@@ -122,6 +133,12 @@ export function InvoiceLifecycle(p: LifecycleProps) {
           </>
         )}
       </div>
+      {blocker && (
+        <div className="full notice">
+          <strong>Vor der Finalisierung</strong>
+          <p>{blocker}</p>
+        </div>
+      )}
       {dirty && (
         <p className="full notice">
           Speichern Sie Ihre Änderungen, bevor Sie die E-Rechnung prüfen oder
@@ -146,11 +163,17 @@ export function InvoiceLifecycle(p: LifecycleProps) {
                 {i.severity === 'WARNING' ? 'Hinweis' : 'Bitte korrigieren'}:{' '}
                 {i.message}
               </strong>
+              <p>{correctionGuidance(i.fieldPath).why}</p>
+              <p className="muted">{correctionGuidance(i.fieldPath).action}</p>
               {i.fieldPath.startsWith('seller.') ? (
                 <Link href="/settings/company">Unternehmensdaten öffnen</Link>
               ) : i.fieldPath.startsWith('buyer.') ? (
-                <Link href="/customers">Kundendaten öffnen</Link>
-              ) : (
+                <Link href={`/customers/${p.customerId}`}>
+                  Kundendaten öffnen
+                </Link>
+              ) : /^(buyerReference|issueDate|dueDate|serviceDate|notes|lines\.\d+\.(description|quantity|unit|unitPrice|vatRate|allowance|charge))$/.test(
+                  i.fieldPath,
+                ) ? (
                 <button
                   className="text-button"
                   onClick={() => {
@@ -161,6 +184,11 @@ export function InvoiceLifecycle(p: LifecycleProps) {
                 >
                   Zum Feld
                 </button>
+              ) : (
+                <span className="muted">
+                  Prüfen Sie die Rechnungsangaben; bei Bedarf die Prüfdetails
+                  öffnen.
+                </span>
               )}
               <details>
                 <summary>Prüfdetails</summary>

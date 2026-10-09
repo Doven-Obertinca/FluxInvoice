@@ -39,6 +39,53 @@ async function review(page: Page, name: string) {
     document.documentElement.dataset.theme = 'light';
   });
 }
+async function installCamera(page: Page, data = '', deferred = false) {
+  await page.evaluate(
+    async ({ data, deferred }) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = 700;
+      let image: HTMLImageElement | undefined;
+      if (data) {
+        image = new Image();
+        image.src = data;
+        await image.decode();
+      }
+      const draw = () => {
+        const context = canvas.getContext('2d')!;
+        context.fillStyle = '#fff';
+        context.fillRect(0, 0, 700, 700);
+        if (image) context.drawImage(image, 0, 0);
+      };
+      draw();
+      document.documentElement.dataset.cameraStopped = 'false';
+      Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {
+        configurable: true,
+        value: async () => {
+          const stream = canvas.captureStream(5);
+          const redraw = setInterval(draw, 100);
+          for (const track of stream.getTracks()) {
+            const original = track.stop.bind(track);
+            track.stop = () => {
+              clearInterval(redraw);
+              original();
+              document.documentElement.dataset.cameraStopped = 'true';
+            };
+          }
+          if (deferred)
+            await new Promise<void>((resolve) =>
+              document.addEventListener(
+                'fixture-camera-granted',
+                () => resolve(),
+                { once: true },
+              ),
+            );
+          return stream;
+        },
+      });
+    },
+    { data, deferred },
+  );
+}
 export async function exerciseImports(page: Page) {
   const outgoing: string[] = [];
   const track = (request: import('@playwright/test').Request) => {
@@ -50,11 +97,18 @@ export async function exerciseImports(page: Page) {
   };
   page.context().on('request', track);
   await test.step('read PDF, review suggestions, save and officially validate imported invoice', async () => {
+    await expect(
+      page.getByRole('link', { name: 'Neue Rechnung', exact: true }),
+    ).toHaveClass(/button-primary/);
+    await expect(
+      page.getByRole('link', { name: 'Aus Dokument erstellen', exact: true }),
+    ).toHaveClass(/button-outline/);
+
     await page
-      .getByRole('link', { name: 'Brief / QR-Code lesen', exact: true })
+      .getByRole('link', { name: 'Aus Dokument erstellen', exact: true })
       .click();
     await expect(
-      page.getByRole('heading', { name: 'Brief oder QR-Code lesen' }),
+      page.getByRole('heading', { name: 'Aus Dokument erstellen' }),
     ).toBeVisible();
     await review(page, 'import-empty');
     await page
@@ -67,12 +121,26 @@ export async function exerciseImports(page: Page) {
       page.getByText('AUFTRAG-2026-42', { exact: true }),
     ).toBeVisible();
     await expect(
-      page.getByRole('button', { name: 'Im Rechnungseditor prüfen' }),
+      page.getByRole('button', { name: 'Geprüfte Angaben im Editor öffnen' }),
     ).toBeDisabled();
     await review(page, 'import-pdf');
     await page.getByRole('checkbox').check();
+    await page.getByText('Erkannter Text / QR-Inhalt', { exact: true }).click();
+    const source = await page.getByLabel('Quelltext prüfen').inputValue();
+    await page.getByLabel('Quelltext prüfen').fill(source + '\n');
+    await expect(
+      page.getByRole('button', { name: 'Geprüfte Angaben im Editor öffnen' }),
+    ).toHaveCount(0);
     await page
-      .getByRole('button', { name: 'Im Rechnungseditor prüfen' })
+      .getByRole('button', { name: 'Textkorrekturen auswerten' })
+      .click();
+    await expect(page.getByRole('checkbox')).not.toBeChecked();
+    await expect(
+      page.getByRole('button', { name: 'Geprüfte Angaben im Editor öffnen' }),
+    ).toBeDisabled();
+    await page.getByRole('checkbox').check();
+    await page
+      .getByRole('button', { name: 'Geprüfte Angaben im Editor öffnen' })
       .click();
     await expect(
       page.getByLabel('Beschreibung', { exact: true }).first(),
@@ -83,9 +151,18 @@ export async function exerciseImports(page: Page) {
     await expect(
       page.getByLabel('Kundenreferenz', { exact: true }),
     ).toHaveValue('AUFTRAG-2026-42');
+    await expect(page.getByLabel('Fällig am', { exact: true })).toHaveValue('');
+    await expect(
+      page.getByRole('button', { name: 'Entwurf speichern' }),
+    ).toBeDisabled();
+    const issueDate = await page
+      .getByLabel('Rechnungsdatum', { exact: true })
+      .inputValue();
+    await page.getByLabel('Fällig am', { exact: true }).fill(issueDate);
     await expect(
       page.getByText(/Der berechnete Gesamtbetrag stimmt überein/),
     ).toBeVisible();
+
     await page.getByRole('button', { name: 'Entwurf speichern' }).click();
     await expect(page).toHaveURL(/\/invoices\/[a-f0-9-]+$/);
     await expect(
@@ -120,7 +197,7 @@ export async function exerciseImports(page: Page) {
     await page.goto('/invoices/import');
     await page.getByRole('radio', { name: 'QR-Code', exact: true }).check();
     const code =
-      'BCD\n002\n1\nSCT\n\nFiktiver Lieferant\nDE89370400440532013000\nEUR119.00\n\n\nRG-42';
+      'BCD\n002\n1\nSCT\n\nFiktiver Lieferant\nDE44500105175407324931\nEUR119.00\n\n\nRG-42';
     const buffer = await QRCode.toBuffer(code, { width: 600, margin: 4 });
     await page
       .getByLabel('Foto oder PDF auswählen')
@@ -138,18 +215,57 @@ export async function exerciseImports(page: Page) {
       .selectOption({ label: 'Kontur Werkstatt GmbH' });
     await page.getByRole('checkbox').check();
     await page
-      .getByRole('button', { name: 'Im Rechnungseditor prüfen' })
+      .getByRole('button', { name: 'Geprüfte Angaben im Editor öffnen' })
       .click();
     await expect(page.getByLabel('Beschreibung', { exact: true })).toHaveValue(
       '',
     );
     await expect(page.getByLabel('Preis netto', { exact: true })).toHaveValue(
-      '0',
+      '',
     );
     await expect(
       page.getByLabel('Kundenreferenz', { exact: true }),
     ).toHaveValue('');
     await expect(page.getByText(/Der Entwurf weicht davon ab/)).toBeVisible();
+    await expect(page.locator('.paper')).toContainText(
+      'DE89370400440532013000',
+    );
+    await expect(page.locator('.paper')).not.toContainText(
+      'DE44500105175407324931',
+    );
+    await expect(page.getByLabel('Menge', { exact: true })).toHaveValue('');
+    await expect(
+      page.getByRole('combobox', { name: 'Einheit', exact: true }),
+    ).toHaveValue('');
+    await expect(
+      page.getByRole('combobox', { name: 'USt.', exact: true }),
+    ).toHaveValue('');
+    await expect(
+      page.getByLabel('Leistungsdatum', { exact: true }),
+    ).toHaveValue('');
+    await expect(
+      page.getByRole('button', { name: 'Entwurf speichern' }),
+    ).toBeDisabled();
+    await page.getByRole('tab', { name: 'Prüfung', exact: true }).click();
+    await page
+      .getByRole('button', {
+        name: 'Wählen Sie den zutreffenden Umsatzsteuersatz aus.',
+        exact: true,
+      })
+      .click();
+    await expect(
+      page.getByRole('combobox', { name: 'USt.', exact: true }),
+    ).toBeFocused();
+    await page
+      .getByRole('button', {
+        name: 'Wählen Sie die Einheit für diese Leistung aus.',
+        exact: true,
+      })
+      .click();
+    await expect(
+      page.getByRole('combobox', { name: 'Einheit', exact: true }),
+    ).toBeFocused();
+    await review(page, 'import-incomplete');
   });
   await test.step('decode labelled invoice QR and refuse URL QR without navigation', async () => {
     await page.goto('/invoices/import');
@@ -176,7 +292,7 @@ export async function exerciseImports(page: Page) {
     );
     await expect(page).toHaveURL(/\/invoices\/import$/);
     await expect(
-      page.getByRole('button', { name: 'Im Rechnungseditor prüfen' }),
+      page.getByRole('button', { name: 'Geprüfte Angaben im Editor öffnen' }),
     ).toHaveCount(0);
   });
   await test.step('reject invalid, oversized, encrypted and over-limit documents; cancel reading', async () => {
@@ -228,33 +344,7 @@ export async function exerciseImports(page: Page) {
       'BCD\n002\n1\nSCT\n\nKamera Testempfaenger\nDE89370400440532013000\nEUR25.00',
       { width: 700 },
     );
-    await page.evaluate(async (data) => {
-      const image = new Image();
-      image.src = data;
-      await image.decode();
-      const canvas = document.createElement('canvas');
-      canvas.width = canvas.height = 700;
-      canvas.getContext('2d')!.drawImage(image, 0, 0);
-      Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {
-        configurable: true,
-        value: async () => {
-          const stream = canvas.captureStream(5);
-          const redraw = setInterval(
-            () => canvas.getContext('2d')!.drawImage(image, 0, 0),
-            100,
-          );
-          for (const track of stream.getTracks()) {
-            const original = track.stop.bind(track);
-            track.stop = () => {
-              clearInterval(redraw);
-              original();
-              document.documentElement.dataset.cameraStopped = 'true';
-            };
-          }
-          return stream;
-        },
-      });
-    }, data);
+    await installCamera(page, data);
     await page.getByRole('button', { name: 'Kamera starten' }).click();
     await expect(
       page.getByText('Kamera Testempfaenger', { exact: true }),
@@ -266,6 +356,93 @@ export async function exerciseImports(page: Page) {
     await expect(
       page.getByRole('button', { name: 'Kamera stoppen' }),
     ).toHaveCount(0);
+  });
+  await test.step('camera releases tracks on stop, page hiding, navigation and late permission', async () => {
+    for (const action of ['stop', 'hidden', 'navigate', 'late-grant']) {
+      await page.goto('/invoices/import');
+      await page.getByRole('radio', { name: 'QR-Code', exact: true }).check();
+      await installCamera(page, '', action === 'late-grant');
+      await page.getByRole('button', { name: 'Kamera starten' }).click();
+      if (action !== 'late-grant')
+        await expect(
+          page.getByText('Halten Sie einen QR-Code ruhig in die Kamera.'),
+        ).toBeVisible();
+      if (action === 'navigate') {
+        await page
+          .getByRole('link', { name: '← Rechnungen', exact: true })
+          .click();
+        await expect(page).toHaveURL(/\/invoices$/);
+      } else if (action === 'hidden') {
+        await page.evaluate(() => {
+          Object.defineProperty(document, 'hidden', {
+            configurable: true,
+            value: true,
+          });
+          document.dispatchEvent(new Event('visibilitychange'));
+          Reflect.deleteProperty(document, 'hidden');
+        });
+      } else {
+        await page.getByRole('button', { name: 'Kamera stoppen' }).click();
+        if (action === 'late-grant')
+          await page.evaluate(() =>
+            document.dispatchEvent(new Event('fixture-camera-granted')),
+          );
+      }
+      await expect(page.locator('html')).toHaveAttribute(
+        'data-camera-stopped',
+        'true',
+      );
+      await expect(
+        page.getByRole('button', { name: 'Kamera stoppen' }),
+      ).toHaveCount(0);
+    }
+  });
+  await test.step('cancelling OCR initialization releases the worker and permits a fresh read', async () => {
+    await page.goto('/invoices/import');
+    const active = new Set<import('@playwright/test').Worker>();
+    const onWorker = (worker: import('@playwright/test').Worker) => {
+      if (worker.url().includes('/reader/ocr/')) {
+        active.add(worker);
+        worker.on('close', () => active.delete(worker));
+      }
+    };
+    page.on('worker', onWorker);
+    let release = () => {};
+    let requested = false;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const pattern = '**/reader/ocr/deu.traineddata.gz';
+    await page.route(pattern, async (route) => {
+      requested = true;
+      await gate;
+      await route.continue();
+    });
+    try {
+      await page
+        .getByLabel('Foto oder PDF auswählen')
+        .setInputFiles(fixture('letter.png'));
+      await expect.poll(() => requested, { timeout: 10000 }).toBe(true);
+      await page.getByRole('button', { name: 'Lesen abbrechen' }).click();
+      await expect(page.locator('main').getByRole('alert')).toContainText(
+        'abgebrochen',
+      );
+      release();
+      await expect.poll(() => active.size, { timeout: 10000 }).toBe(0);
+      await expect(
+        page.getByRole('heading', { name: '2. Angaben prüfen' }),
+      ).toHaveCount(0);
+    } finally {
+      release();
+      await page.unroute(pattern);
+      page.off('worker', onWorker);
+    }
+    await page
+      .getByLabel('Foto oder PDF auswählen')
+      .setInputFiles(fixture('letter.png'));
+    await expect(
+      page.getByText('2 Positionsvorschläge', { exact: true }),
+    ).toBeVisible({ timeout: 30000 });
   });
   expect(
     outgoing,

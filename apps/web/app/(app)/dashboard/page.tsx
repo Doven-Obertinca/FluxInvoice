@@ -62,6 +62,10 @@ export default async function Dashboard() {
       <div className="bottom-grid">
         <section className="panel">
           <h2>Nächste Schritte</h2>
+          <Link className="queue-row" href="/invoices/attention">
+            <span>Handlungsbedarf</span>
+            <strong>Prüfen →</strong>
+          </Link>
           <Link className="queue-row" href="/invoices?status=DRAFT">
             <span>Entwürfe vervollständigen</span>
             <strong>{summary.drafts}</strong>

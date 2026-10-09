@@ -1,6 +1,6 @@
 import { resolve } from 'node:path';
 import { validCases } from '../packages/einvoice/fixtures/corpus';
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { mkdtemp, rm, chmod, writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -21,6 +21,10 @@ import { serializeUbl, toSemantic, semanticIssues } from '@flux/einvoice';
 import { fixture as supported } from '../packages/einvoice/fixtures/supported';
 import { safeParseXml } from '../packages/einvoice/src/security';
 import { LocalArchive, ArchiveError } from '@flux/storage';
+// A finalization invokes the Java validator twice (up to 30 seconds each).
+// Leave time for database and archive operations on slower CI runners.
+vi.setConfig({ testTimeout: 90000 });
+
 const databaseName = `flux_einvoice_${randomUUID().replaceAll('-', '')}`;
 const adminUrl =
   process.env.TEST_DATABASE_URL ??
@@ -216,6 +220,28 @@ describe('authoritative XRechnung and fiscal lifecycle', () => {
         .where(eq(s.invoiceDocuments.id, doc.id)),
     ).rejects.toThrow();
   });
+  it('lists an actually issued overdue invoice as payment follow-up, not validation failure', async () => {
+    const id = await invoices.saveInvoice(
+      p,
+      {
+        ...supported.input,
+        customerId,
+        issueDate: '2025-01-01',
+        dueDate: '2025-01-02',
+        serviceDate: '2025-01-01',
+      },
+      { idempotencyKey: randomUUID() },
+    );
+    expect(
+      (await invoices.attention(p)).find((r) => r.id === id),
+    ).toBeUndefined();
+    const job = await service.enqueue(p, id, 1, 'FINALIZE', randomUUID());
+    await service.process(p.organizationId, job);
+    expect((await invoices.attention(p)).find((r) => r.id === id)?.reason).toBe(
+      'OVERDUE',
+    );
+    expect((await invoices.invoice(p, id)).invoice.status).toBe('FINALIZED');
+  }, 150000);
   it('keeps a reserved number and frozen draft through archive failure and retry', async () => {
     const id = await draft();
     const jobId = await service.enqueue(p, id, 1, 'FINALIZE', randomUUID());
@@ -238,11 +264,17 @@ describe('authoritative XRechnung and fiscal lifecycle', () => {
     const before = await invoices.invoice(p, id);
     expect(before.invoice.status).toBe('VALIDATED');
     expect(before.invoice.finalizationPending).toBe(true);
+    expect((await invoices.attention(p)).find((r) => r.id === id)?.reason).toBe(
+      'PROCESSING',
+    );
     await service.process(p.organizationId, jobId);
     const after = await invoices.invoice(p, id);
     expect(after.invoice.number).toBe(failed!.number);
     expect(after.invoice.status).toBe('FINALIZED');
-  }, 30000);
+    expect(
+      (await invoices.attention(p)).find((r) => r.id === id)?.reason,
+    ).not.toBe('PROCESSING');
+  }, 150000);
   it('blocks download of tampered archived bytes and records an integrity failure', async () => {
     const id = await draft();
     const job = await service.enqueue(p, id, 1, 'FINALIZE', randomUUID());
@@ -291,23 +323,33 @@ it('upload success followed by SQL failure remains recoverable with the same obj
   await pool.query(
     `CREATE FUNCTION test_reject_finalize() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.id='${id}' AND NEW.status='FINALIZED' THEN RAISE EXCEPTION 'injected SQL failure'; END IF; RETURN NEW; END; $$; CREATE TRIGGER test_injected BEFORE UPDATE ON invoices FOR EACH ROW EXECUTE FUNCTION test_reject_finalize()`,
   );
-  await expect(service.process(p.organizationId, jobId)).rejects.toThrow();
-  const [failed] = await db
-    .select()
-    .from(s.einvoiceJobs)
-    .where(eq(s.einvoiceJobs.id, jobId));
-  expect(failed?.objectKey).toBeTruthy();
-  expect((await service.history(p, id)).documents).toHaveLength(0);
-  const orphan = await archive.get(failed!.objectKey!, failed!.candidateHash!);
-  expect(sha256(orphan)).toBe(failed!.candidateHash);
-  await pool.query(
-    'DROP TRIGGER test_injected ON invoices; DROP FUNCTION test_reject_finalize()',
-  );
+  let failed: typeof s.einvoiceJobs.$inferSelect | undefined;
+  try {
+    await expect(service.process(p.organizationId, jobId)).rejects.toThrow(
+      'EINVOICE_RETRY_REQUIRED',
+    );
+    [failed] = await db
+      .select()
+      .from(s.einvoiceJobs)
+      .where(eq(s.einvoiceJobs.id, jobId));
+    expect(failed?.lastErrorCode).toBe('FINALIZATION_FAILED');
+    expect(failed?.objectKey).toBeTruthy();
+    expect((await service.history(p, id)).documents).toHaveLength(0);
+    const orphan = await archive.get(
+      failed!.objectKey!,
+      failed!.candidateHash!,
+    );
+    expect(sha256(orphan)).toBe(failed!.candidateHash);
+  } finally {
+    await pool.query(
+      'DROP TRIGGER IF EXISTS test_injected ON invoices; DROP FUNCTION IF EXISTS test_reject_finalize()',
+    );
+  }
   await service.process(p.organizationId, jobId);
   const result = await invoices.invoice(p, id);
   expect(result.invoice.number).toBe(failed!.number);
   expect((await service.history(p, id)).documents).toHaveLength(1);
-}, 30000);
+}, 150000);
 it('historical documents survive later changes to company and customer masters', async () => {
   const id = await draft();
   const job = await service.enqueue(p, id, 1, 'FINALIZE', randomUUID());
@@ -512,4 +554,227 @@ it('rejects unsupported tax scenarios, invalid identifiers and XML control chara
       (i) => i.ruleId === 'FLUX-XML-CHAR' && i.fieldPath === 'notes',
     ),
   ).toBe(true);
+});
+
+it('delivers only authoritative bytes with tenant isolation, audited retries, deduplication and authenticated receipts', async () => {
+  const { DeliveryService } =
+    await import('../packages/application/src/delivery');
+  const { createHmac } = await import('node:crypto');
+  const sent: import('../packages/application/src/email-provider').DeliveryEnvelope[] =
+    [];
+  const mail = new DeliveryService(db, archive, {
+    name: 'gateway',
+    send: async (envelope) => {
+      sent.push(envelope);
+      return envelope.id;
+    },
+  });
+  const id = await draft();
+  await expect(mail.compose(p, id)).rejects.toMatchObject({ code: 'CONFLICT' });
+  const job = await service.enqueue(p, id, 1, 'FINALIZE', randomUUID());
+  await service.process(p.organizationId, job);
+  const before = (await invoices.invoice(p, id)).invoice;
+  const composer = await mail.compose(p, id);
+  expect(composer.recipient).toBe(supported.buyer.email);
+  expect(composer.subject).toContain(before.number);
+  expect(composer.message).toContain('Vielen Dank');
+  const request = {
+    key: randomUUID(),
+    recipient: composer.recipient,
+    subject: composer.subject,
+    message: composer.message,
+  };
+  await expect(
+    mail.enqueue({ ...p, organizationId: randomUUID() }, id, request),
+  ).rejects.toMatchObject({ code: 'AUTHORIZATION' });
+  await db.insert(s.user).values({
+    id: 'delivery-viewer',
+    name: 'Viewer',
+    email: 'delivery-viewer@example.test',
+  });
+  await db.insert(s.members).values({
+    organizationId: p.organizationId,
+    userId: 'delivery-viewer',
+    role: 'VIEWER',
+  });
+  await expect(
+    mail.enqueue({ ...p, userId: 'delivery-viewer' }, id, request),
+  ).rejects.toMatchObject({ code: 'AUTHORIZATION' });
+  const otherOrg = randomUUID();
+  await db.insert(s.organizations).values({
+    ...(await invoices.company(p)),
+    id: otherOrg,
+    name: 'Other tenant',
+  });
+  await db.insert(s.members).values({
+    organizationId: otherOrg,
+    userId: 'delivery-viewer',
+    role: 'OWNER',
+  });
+  const other = { ...p, organizationId: otherOrg, userId: 'delivery-viewer' };
+  await expect(mail.compose(other, id)).rejects.toMatchObject({
+    code: 'CONFLICT',
+  });
+  await expect(mail.enqueue(other, id, request)).rejects.toMatchObject({
+    code: 'CONFLICT',
+  });
+  await expect(mail.history(other, id)).rejects.toMatchObject({
+    code: 'NOT_FOUND',
+  });
+  const originalSettings = await mail.settings(p);
+  const { defaults } =
+    await import('../packages/application/src/email-template');
+  await mail.saveSettings(p, {
+    ...originalSettings,
+    language: 'en',
+    ...defaults('en'),
+  });
+  expect((await mail.compose(p, id)).message).toContain(
+    'Thank you for your business.',
+  );
+  await expect(
+    mail.saveSettings({ ...p, userId: 'delivery-viewer' }, originalSettings),
+  ).rejects.toMatchObject({ code: 'AUTHORIZATION' });
+  await mail.saveSettings(p, originalSettings);
+  const results = await Promise.all([
+    mail.enqueue(p, id, request),
+    mail.enqueue(p, id, request),
+  ]);
+  expect(results[0]).toBe(results[1]);
+  await expect(
+    mail.enqueue(p, id, { ...request, key: randomUUID() }),
+  ).rejects.toMatchObject({ code: 'CONFLICT' });
+  await expect(
+    mail.enqueue(p, id, { ...request, subject: 'different' }),
+  ).rejects.toMatchObject({ code: 'CONFLICT' });
+  await Promise.all([
+    mail.process(p.organizationId, results[0]!),
+    mail.process(p.organizationId, results[0]!),
+  ]);
+  expect(sent).toHaveLength(1);
+  const doc = (await service.history(p, id)).documents[0]!;
+  expect(sent[0]!.attachments[0]!.content).toEqual(
+    await archive.get(doc.objectKey, doc.objectVersion),
+  );
+  expect((await mail.history(p, id))[0]?.status).toBe('SUBMITTED');
+  process.env.DELIVERY_WEBHOOK_SECRET =
+    'test-only-secret-with-at-least-32-characters';
+  const body = JSON.stringify({
+    eventId: randomUUID(),
+    attemptId: results[0],
+    providerId: results[0],
+    status: 'DELIVERED',
+  });
+  const timestamp = String(Math.floor(Date.now() / 1000));
+  const signature = createHmac('sha256', process.env.DELIVERY_WEBHOOK_SECRET)
+    .update(timestamp + '.' + body)
+    .digest('hex');
+  await expect(mail.receipt(body, timestamp, '0'.repeat(64))).rejects.toThrow();
+  await expect(mail.receipt(body, '1000000000', signature)).rejects.toThrow();
+  await mail.receipt(body, timestamp, signature);
+  await mail.receipt(body, timestamp, signature);
+  expect((await mail.history(p, id))[0]?.status).toBe('DELIVERED');
+  await pool.query(
+    "UPDATE invoice_deliveries SET created_at=now()-interval '1 minute' WHERE id=$1",
+    [results[0]],
+  );
+  const retry = await mail.enqueue(p, id, {
+    ...request,
+    key: randomUUID(),
+    resendOf: results[0],
+  });
+  const failing = new DeliveryService(db, archive, {
+    name: 'smtp',
+    send: async () => {
+      throw Error('offline');
+    },
+  });
+  await failing.process(p.organizationId, retry);
+  await failing.process(p.organizationId, retry);
+  expect((await mail.history(p, id))[0]?.status).toBe('FAILED');
+  await expect(
+    mail.enqueue({ ...p, userId: 'delivery-viewer' }, id, {
+      ...request,
+      key: randomUUID(),
+      resendOf: retry,
+    }),
+  ).rejects.toMatchObject({ code: 'AUTHORIZATION' });
+  await pool.query(
+    "UPDATE invoice_deliveries SET created_at=now()-interval '30 seconds' WHERE id=$1",
+    [retry],
+  );
+  const tamper = await mail.enqueue(p, id, {
+    ...request,
+    key: randomUUID(),
+    resendOf: retry,
+  });
+  const corrupt = new DeliveryService(
+    db,
+    {
+      put: archive.put.bind(archive),
+      get: async () => Buffer.from('tampered'),
+    },
+    {
+      name: 'gateway',
+      send: async (envelope) => {
+        sent.push(envelope);
+        return envelope.id;
+      },
+    },
+  );
+  await corrupt.process(p.organizationId, tamper);
+  expect((await mail.history(p, id))[0]?.error_code).toBe(
+    'ATTACHMENT_INTEGRITY',
+  );
+  expect(sent).toHaveLength(1);
+  await pool.query(
+    "UPDATE invoice_deliveries SET created_at=created_at-interval '1 minute' WHERE invoice_id=$1",
+    [id],
+  );
+  const bounced = await mail.enqueue(p, id, {
+    ...request,
+    key: randomUUID(),
+    resendOf: tamper,
+  });
+  await mail.process(otherOrg, bounced);
+  expect((await mail.history(p, id))[0]?.status).toBe('QUEUED');
+  await mail.process(p.organizationId, bounced);
+  const bounceBody = JSON.stringify({
+    eventId: randomUUID(),
+    attemptId: bounced,
+    providerId: bounced,
+    status: 'BOUNCED',
+  });
+  await mail.receipt(
+    bounceBody,
+    timestamp,
+    createHmac('sha256', process.env.DELIVERY_WEBHOOK_SECRET!)
+      .update(timestamp + '.' + bounceBody)
+      .digest('hex'),
+  );
+  expect((await mail.history(p, id))[0]?.status).toBe('BOUNCED');
+  await pool.query(
+    "UPDATE invoice_deliveries SET created_at=created_at-interval '1 minute' WHERE invoice_id=$1",
+    [id],
+  );
+  const crashed = await mail.enqueue(p, id, {
+    ...request,
+    key: randomUUID(),
+    resendOf: bounced,
+  });
+  await pool.query(
+    "UPDATE invoice_deliveries SET claimed_at=now()-interval '4 minutes' WHERE id=$1",
+    [crashed],
+  );
+  await mail.process(p.organizationId, crashed);
+  expect((await mail.history(p, id))[0]?.error_code).toBe('SUBMISSION_UNKNOWN');
+  expect(sent).toHaveLength(2);
+  expect((await invoices.invoice(p, id)).invoice).toEqual(before);
+  const events = (await service.history(p, id)).activity.map(
+    (e) => e.eventType,
+  );
+  expect(events).toContain('delivery.submitted');
+  expect(events).toContain('delivery.delivered');
+  expect(events).toContain('delivery.failed');
+  delete process.env.DELIVERY_WEBHOOK_SECRET;
 });

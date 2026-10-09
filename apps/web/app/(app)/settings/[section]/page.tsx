@@ -1,6 +1,7 @@
+import { EmailSettings } from '../../../../components/email-settings';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { principal, service } from '../../../../lib/server';
+import { principal, service, delivery } from '../../../../lib/server';
 import { BusinessForm } from '../../../../components/forms';
 import { Heading } from '../../../../components/page';
 export default async function Settings({
@@ -10,7 +11,7 @@ export default async function Settings({
 }) {
   const p = await principal();
   const { section } = await params;
-  if (!['company', 'members', 'api', 'integrations'].includes(section))
+  if (!['company', 'email', 'members', 'api', 'integrations'].includes(section))
     notFound();
   const org = await service.company(p);
   const members = section === 'members' ? await service.listMembers(p) : [];
@@ -24,6 +25,7 @@ export default async function Settings({
       <nav className="settings-nav" aria-label="Einstellungen">
         {[
           ['company', 'Unternehmen'],
+          ['email', 'E-Mail & Versand'],
           ['members', 'Mitglieder'],
           ['api', 'API'],
           ['integrations', 'Integrationen'],
@@ -37,7 +39,9 @@ export default async function Settings({
           </Link>
         ))}
       </nav>
-      {section === 'company' ? (
+      {section === 'email' ? (
+        <EmailSettings initial={await delivery.settings(p)} />
+      ) : section === 'company' ? (
         <BusinessForm
           kind="company"
           initial={{

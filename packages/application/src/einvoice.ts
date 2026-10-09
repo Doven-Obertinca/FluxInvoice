@@ -604,7 +604,7 @@ export class EinvoiceService {
                 ? error.message
                 : 'FINALIZATION_FAILED',
           );
-        throw new Error('EINVOICE_RETRY_REQUIRED');
+        throw new Error('EINVOICE_RETRY_REQUIRED', { cause: error });
       }
     } finally {
       try {

@@ -41,14 +41,23 @@ export function parseReport(bytes: Buffer): {
   const accepted = doc.getElementsByTagNameNS(ns, 'accept').length > 0;
   const issues: Issue[] = [];
   const seen = new Set<string>();
-  for (const element of Array.from(
-    doc.getElementsByTagNameNS(
-      'http://purl.oclc.org/dsdl/svrl',
-      'failed-assert',
+  // KoSIT's VARL report contains normalized messages; raw SVRL may be absent.
+  // Prefer the normalized severity and keep SVRL support for other report forms.
+  for (const element of [
+    ...Array.from(doc.getElementsByTagNameNS(ns, 'message')),
+    ...Array.from(
+      doc.getElementsByTagNameNS(
+        'http://purl.oclc.org/dsdl/svrl',
+        'failed-assert',
+      ),
     ),
-  )) {
-    const ruleId = element.getAttribute('id') ?? 'KOSIT-RULE';
-    const key = ruleId + ':' + element.getAttribute('location');
+  ]) {
+    const normalized = element.namespaceURI === ns;
+    const ruleId =
+      element.getAttribute(normalized ? 'code' : 'id') || 'KOSIT-RULE';
+    const location =
+      element.getAttribute(normalized ? 'xpathLocation' : 'location') ?? '';
+    const key = ruleId + ':' + location;
     if (seen.has(key)) continue;
     seen.add(key);
     const t = ruleMap[ruleId] ? terms[ruleMap[ruleId]] : undefined;
@@ -62,10 +71,10 @@ export function parseReport(bytes: Buffer): {
         'Die E-Rechnungsprüfung hat eine Unstimmigkeit gefunden. Öffnen Sie die Details oder prüfen Sie die Angaben.',
       'KOSIT',
       mapped?.bt ?? bt,
-      element.getAttribute('location') ?? '',
+      location,
     );
     row.severity = ['warning', 'information'].includes(
-      element.getAttribute('flag') ?? '',
+      element.getAttribute(normalized ? 'level' : 'flag') ?? '',
     )
       ? 'WARNING'
       : 'ERROR';

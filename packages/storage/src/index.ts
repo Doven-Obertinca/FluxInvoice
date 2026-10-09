@@ -36,7 +36,7 @@ export interface Archive {
   get(key: string, version: string): Promise<Buffer>;
 }
 export function validateKey(key: string) {
-  if (!/^[a-f0-9-]{36}\/[a-f0-9-]{36}\/[a-f0-9]{64}\.xml$/.test(key))
+  if (!/^[a-f0-9-]{36}\/[a-f0-9-]{36}\/[a-f0-9]{64}\.(xml|pdf)$/.test(key))
     throw new ArchiveError('ARCHIVE_CONFIGURATION');
 }
 export class LocalArchive implements Archive {
@@ -65,7 +65,7 @@ export class LocalArchive implements Archive {
       throw new ArchiveError('ARCHIVE_CONFIGURATION');
     const target = await this.file(key);
     const digest = hashBytes(bytes);
-    if (!key.endsWith(`${digest}.xml`))
+    if (!key.endsWith(`${digest}.xml`) && !key.endsWith(`${digest}.pdf`))
       throw new ArchiveError('ARCHIVE_INTEGRITY');
     const temp = resolve(dirname(target), `.${randomUUID()}.tmp`);
     const handle = await open(temp, 'wx', 0o600);
@@ -160,7 +160,7 @@ export class S3Archive implements Archive {
     if (!Number.isFinite(retainUntil.getTime()) || retainUntil <= new Date())
       throw new ArchiveError('ARCHIVE_CONFIGURATION');
     const digest = hashBytes(bytes);
-    if (!key.endsWith(`${digest}.xml`))
+    if (!key.endsWith(`${digest}.xml`) && !key.endsWith(`${digest}.pdf`))
       throw new ArchiveError('ARCHIVE_INTEGRITY');
     await this.configuration();
     try {
@@ -169,7 +169,9 @@ export class S3Archive implements Archive {
           Bucket: this.bucket,
           Key: key,
           Body: bytes,
-          ContentType: 'application/xml',
+          ContentType: key.endsWith('.pdf')
+            ? 'application/pdf'
+            : 'application/xml',
           ChecksumSHA256: Buffer.from(digest, 'hex').toString('base64'),
           Metadata: { sha256: digest },
           IfNoneMatch: '*',

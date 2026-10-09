@@ -9,3 +9,5 @@ REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 -- Apply/review grants after each migration. Do not grant access to drizzle migration metadata.
 
 REVOKE DELETE, TRUNCATE ON einvoice_jobs FROM flux_runtime;
+REVOKE DELETE, TRUNCATE ON invoice_deliveries FROM flux_runtime;
+REVOKE UPDATE, DELETE, TRUNCATE ON delivery_receipts FROM flux_runtime;

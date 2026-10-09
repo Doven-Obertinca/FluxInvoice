@@ -1,3 +1,4 @@
+import { dropTestDatabase } from './database-cleanup';
 import { resolve } from 'node:path';
 import { validCases } from '../packages/einvoice/fixtures/corpus';
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
@@ -87,7 +88,7 @@ beforeAll(async () => {
 });
 afterAll(async () => {
   await pool.end();
-  await admin.query(`DROP DATABASE IF EXISTS "${databaseName}" WITH (FORCE)`);
+  await dropTestDatabase(admin, databaseName);
   await admin.end();
   await rm(root, { recursive: true, force: true });
 });

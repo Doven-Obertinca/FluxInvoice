@@ -28,6 +28,8 @@ Optional fictional data: create and verify an account **without completing onboa
 SEED_USER_EMAIL=your-local-account@example.test npm run db:seed
 ```
 
+For a reusable local login, run `npm run dev:account` after migrations. This creates the verified account `test@fluxinvoice.test` with a generated password saved in the ignored `.local/test-login.json` file. Rerunning the command preserves the account and password. It only runs in development with local database and app URLs. Complete company onboarding on first login.
+
 The seed rejects non-development environments and existing memberships. It creates fictional company/customer records, no shared passwords. Example IBAN data is for development only.
 
 ## Quality gates

@@ -30,7 +30,8 @@
     "archive:reconcile": "tsx scripts/reconcile.ts",
     "reader:prepare": "node --import tsx scripts/prepare-reader.ts",
     "prebuild": "npm run reader:prepare",
-    "predev": "npm run reader:prepare"
+    "predev": "npm run reader:prepare",
+    "dev:account": "tsx scripts/local-account.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "3.1146.0",

@@ -1,3 +1,4 @@
+import { dropTestDatabase } from './database-cleanup';
 import { randomUUID } from 'node:crypto';
 import { beforeAll, afterAll, describe, it, expect } from 'vitest';
 import { Pool } from 'pg';
@@ -88,7 +89,7 @@ beforeAll(async () => {
 });
 afterAll(async () => {
   await pool.end();
-  await admin.query(`DROP DATABASE IF EXISTS "${databaseName}" WITH (FORCE)`);
+  await dropTestDatabase(admin, databaseName);
   await admin.end();
 });
 describe('PostgreSQL tenant and transaction boundaries', () => {

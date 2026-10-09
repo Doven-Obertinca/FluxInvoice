@@ -1,3 +1,4 @@
+import { dropTestDatabase } from '../tests/database-cleanup';
 import { resolve, join } from 'node:path';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -47,6 +48,6 @@ try {
     await new Promise<void>((done) => worker!.once('exit', () => done()));
   }
   await rm(archive, { recursive: true, force: true });
-  await admin.query(`DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`);
+  await dropTestDatabase(admin, name);
   await admin.end();
 }

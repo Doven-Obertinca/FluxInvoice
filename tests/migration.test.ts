@@ -1,3 +1,4 @@
+import { dropTestDatabase } from './database-cleanup';
 import { it, expect } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import {
@@ -84,7 +85,7 @@ it('upgrades populated Phase 1 without rewriting invoices or migration history',
     ).rejects.toThrow();
   } finally {
     await pool.end();
-    await admin.query(`DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`);
+    await dropTestDatabase(admin, name);
     await admin.end();
     await rm(directory, { recursive: true, force: true });
   }

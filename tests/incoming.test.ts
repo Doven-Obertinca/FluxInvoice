@@ -1,3 +1,4 @@
+import { dropTestDatabase } from './database-cleanup';
 import { beforeAll, afterAll, describe, it, expect } from 'vitest';
 import { readFile, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -98,7 +99,7 @@ beforeAll(async () => {
 });
 afterAll(async () => {
   await pool.end();
-  await admin.query(`DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`);
+  await dropTestDatabase(admin, name);
   await admin.end();
   await rm(root, { recursive: true, force: true });
 });

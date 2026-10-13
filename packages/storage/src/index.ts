@@ -127,7 +127,7 @@ export class S3Archive implements Archive {
     private readonly bucket: string,
     private readonly kmsKeyArn: string,
   ) {}
-  private async configuration() {
+  async verifyConfiguration() {
     const [version, lock, encryption] = await Promise.all([
       this.client.send(
         new GetBucketVersioningCommand({ Bucket: this.bucket }),
@@ -162,7 +162,7 @@ export class S3Archive implements Archive {
     const digest = hashBytes(bytes);
     if (!key.endsWith(`${digest}.xml`) && !key.endsWith(`${digest}.pdf`))
       throw new ArchiveError('ARCHIVE_INTEGRITY');
-    await this.configuration();
+    await this.verifyConfiguration();
     try {
       await this.client.send(
         new PutObjectCommand({

@@ -1,6 +1,6 @@
 # Compliance boundary — Phase 2
 
-FluxInvoice issues a deliberately narrow German domestic EUR invoice subset as XRechnung UBL. It does not determine the correct tax treatment of a transaction, guarantee recipient acceptance, or claim comprehensive tax/GoBD certification. A visual preview is not the authoritative electronic invoice. The original archived XML is.
+ERechno issues a deliberately narrow German domestic EUR invoice subset as XRechnung UBL. It does not determine the correct tax treatment of a transaction, guarantee recipient acceptance, or claim comprehensive tax/GoBD certification. A visual preview is not the authoritative electronic invoice. The original archived XML is.
 
 ## Verified production baseline
 

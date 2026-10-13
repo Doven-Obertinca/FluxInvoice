@@ -4,7 +4,7 @@ Status: researched architecture and supported manual handoff; **no DATEV connect
 
 ## Ownership and boundary
 
-FluxInvoice owns reviewed outgoing drafts, exact decimal calculation, official versioned validation, immutable issuance, original XML downloads, audit and processing recovery. Future incoming intake owns separately preserved original bytes and explicit review. DATEV/the adviser owns chart-of-accounts mapping, ledger posting, tax interpretation, closing and statutory accounting. FluxInvoice must not guess SKR accounts, tax keys, debtor/creditor numbers or booking periods.
+ERechno owns reviewed outgoing drafts, exact decimal calculation, official versioned validation, immutable issuance, original XML downloads, audit and processing recovery. Future incoming intake owns separately preserved original bytes and explicit review. DATEV/the adviser owns chart-of-accounts mapping, ledger posting, tax interpretation, closing and statutory accounting. ERechno must not guess SKR accounts, tax keys, debtor/creditor numbers or booking periods.
 
 Current practical handoff: finalize → download the exact integrity-verified XRechnung → user/adviser uploads through their configured DATEV import workflow → verify receipt and content in DATEV. A Flux download is **not** a DATEV acknowledgement or a booking. The [official collaboration overview](https://www.datev.de/web/de/steuerberatung/loesungen/rechnungswesen/belege-und-daten-digital-in-die-kanzlei-uebertragen/digital-zusammenarbeiten) lists XRechnung import/visualization and supported channels; channel-specific restrictions must be checked (its Upload Mail description is limited to ZUGFeRD). No claim that arbitrary email imports XML.
 

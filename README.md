@@ -1,4 +1,12 @@
-# FluxInvoice (DE)
+# ERechno (DE)
+
+Public branding is ERechno. Internal `@flux/*` packages, the `fluxinvoice` database, historical validation identifiers and the existing local test login intentionally retain their names for migration safety.
+
+The public homepage, pricing catalog and local XML viewer are now separate from the authenticated workspace. Free includes three successfully issued invoices per German calendar month, enforced on the server. Paid-plan limits are prepared; checkout is not connected. See [launch audit and architecture](docs/ERECHNO-LAUNCH.md) for capabilities, quota semantics and remaining release gates.
+
+All plans can now be selected before registration. Hosted Stripe subscription checkout, signed webhooks and subscription management are implemented and await merchant configuration. Card and approved recurring PayPal support are prepared; Stripe Klarna excludes B2B purchases. See [billing setup](docs/BILLING.md) before enabling payments. Plan selection never grants paid access by itself.
+
+After updating, run `npm run db:migrate` before starting the worker. Configure `APP_URL` with the canonical HTTPS origin for a production build; staging/development stay noindex. Company, support and Search Console fields are documented in `.env.example`. Reapply reviewed runtime grants after migration. Paid subscription writes require a separate verified billing adapter.
 
 A German, tenant-isolated invoice application with a complete supported XRechnung lifecycle: create, edit, officially validate, finalize once, archive, verify and securely download. The deliberately narrow scope is domestic German EUR invoices with 19%/7% VAT and bank transfer. See [COMPLIANCE.md](COMPLIANCE.md) for exact limits; this is not a general tax-compliance certification.
 
@@ -15,7 +23,7 @@ npm run db:migrate
 npm run compliance:install
 # Supply Java 21: export JAVA_BIN=/absolute/path/to/java
 npm run dev
-# In a second terminal: npm run worker
+# The web server and invoice worker start together.
 ```
 
 Open http://localhost:3000. Register and open the verification email in Mailpit at http://localhost:8025. Follow the link, configure the company, add a customer and create an invoice. Email verification is required in development, staging and production. SMTP also delivers password-reset links. Supply an SMTP service if not using Mailpit.
@@ -52,7 +60,7 @@ Browser tests start the **production build** on loopback port 3100. Their isolat
 
 | Command                       | Purpose                                           |
 | ----------------------------- | ------------------------------------------------- |
-| `npm run dev`                 | Next.js development server                        |
+| `npm run dev`                 | Development web server and invoice worker         |
 | `npm run build` / `npm start` | Production build / server                         |
 | `npm run db:generate`         | Generate reviewed Drizzle SQL migrations          |
 | `npm run db:migrate`          | Apply versioned migrations                        |
@@ -84,7 +92,7 @@ Read [ARCHITECTURE.md](ARCHITECTURE.md), [SECURITY.md](SECURITY.md), [COMPLIANCE
 
 No exemptions, reverse charge, credit notes, cross-border treatment, self-billing, prepayment chains, delivery integrations, Peppol transmission, ZUGFeRD/PDF or accounting integrations. No member invitation UI, API credentials or tenant-switching workflow is activated. Settings disclose unavailable features. Existing Phase 1 audit/calculation/authorization guarantees remain in place.
 
-Local archives are not immutable regulatory storage. Staging/production require `ARCHIVE_MODE=S3_OBJECT_LOCK`, region, bucket and KMS key configuration. A queued job requires the separate worker; a stalled worker does not mean an invoice was finalized. The [deployment runbook](docs/DEPLOYMENT.md) covers installation, IAM, reconciliation and remaining staging assurance.
+Local archives are not immutable regulatory storage. Staging/production require `ARCHIVE_MODE=S3_OBJECT_LOCK`, region, bucket and KMS key configuration. Development starts the worker automatically with `npm run dev`. Production requires the separate worker; a stalled worker does not mean an invoice was finalized. The [deployment runbook](docs/DEPLOYMENT.md) covers installation, IAM, reconciliation and remaining staging assurance.
 
 ## Aus Dokument erstellen
 

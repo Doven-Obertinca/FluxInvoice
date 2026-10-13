@@ -240,7 +240,7 @@ export function InvoiceImport({ customers, seller, today }: Props) {
         </p>
         <p className="muted">
           Die Datei bleibt auf Ihrem Gerät. Nur die von Ihnen gespeicherten
-          Rechnungsangaben werden an FluxInvoice übertragen.
+          Rechnungsangaben werden an ERechno übertragen.
         </p>
         {busy && (
           <Button variant="outline" onClick={() => controller.current?.abort()}>

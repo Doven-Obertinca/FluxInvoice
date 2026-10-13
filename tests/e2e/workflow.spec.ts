@@ -51,7 +51,7 @@ import { test, expect } from '@playwright/test';
 test('sign up, configure company, create customer, save and validate a mixed-tax invoice', async ({
   page,
 }) => {
-  test.setTimeout(180000);
+  test.setTimeout(300000);
   await page.goto('/dashboard');
   await expect(page).toHaveURL(/sign-in/);
   await review(page, 'sign-in');
@@ -385,7 +385,64 @@ test('sign up, configure company, create customer, save and validate a mixed-tax
   ).toBeVisible();
   await page.keyboard.press('Escape');
   await exerciseImports(page);
-  await exerciseIncoming(page);
+  const incomingUrl = await exerciseIncoming(page);
+  await page.goto(incomingUrl);
+  await page.getByLabel('Zahlungsfrist', { exact: true }).fill('2026-10-07');
+  await page.getByRole('button', { name: 'Bedingungen bestätigen' }).click();
+  await expect(page).toHaveURL(/terms=saved/);
+  await page.goto('/autopilot');
+  await expect(
+    page.getByRole('heading', {
+      name: 'Was heute Ihre Aufmerksamkeit braucht',
+    }),
+  ).toBeVisible();
+  await page
+    .getByRole('link')
+    .filter({
+      has: page.getByRole('heading', {
+        name: 'Zahlungsfrist einer Lieferantenrechnung überschritten',
+      }),
+    })
+    .click();
+  await expect(
+    page.getByRole('heading', {
+      name: 'Zahlungsfrist einer Lieferantenrechnung überschritten',
+    }),
+  ).toBeVisible();
+  await page.getByText('Warum sehe ich diesen Hinweis?').click();
+  await expect(
+    page.getByText(/Regel PAYABLE_OVERDUE, Version 1/),
+  ).toBeVisible();
+  await review(page, 'autopilot-action');
+  await page.getByLabel('Tatsächlicher Zahlungstag').fill('2026-10-08');
+  await page
+    .getByRole('button', { name: 'Bestätigung vorbereiten', exact: true })
+    .click();
+  await expect(
+    page.getByRole('heading', { name: 'Zahlung ausdrücklich bestätigen' }),
+  ).toBeVisible();
+  await page
+    .getByRole('button', { name: 'Vollständige Zahlung bestätigen' })
+    .click();
+  await expect(page).toHaveURL(/autopilot$/);
+  await expect(
+    page.getByText('Zahlung bestätigt', { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('heading', {
+      name: 'Zahlungsfrist einer Lieferantenrechnung überschritten',
+    }),
+  ).toHaveCount(0);
+  await review(page, 'autopilot');
+  await page.goto('/autopilot/settings');
+  await page.getByLabel('Arbeitsweise').selectOption('AUTOPILOT');
+  await page.getByLabel('Eingangsrechnung prüfen', { exact: true }).check();
+  await page.getByRole('button', { name: 'Einstellungen speichern' }).click();
+  await expect(page).toHaveURL(/\/autopilot$/);
+  await page.goto('/autopilot/settings');
+  await expect(page.getByLabel('Arbeitsweise')).toHaveValue('AUTOPILOT');
+  await review(page, 'autopilot-settings');
+
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.getByRole('button', { name: 'Abmelden' }).click();
   await expect(page).toHaveURL(/sign-in/);

@@ -1,4 +1,8 @@
 import { z } from 'zod';
+import { validateProduction } from './production';
+export * from './production';
+export * from './brand';
+export * from './plans';
 export class AppError extends Error {
   constructor(
     public readonly code:
@@ -39,8 +43,17 @@ export const environmentSchema = z
         });
     }
   });
-export function environment() {
-  return environmentSchema.parse(process.env);
+export function environment(role: 'web' | 'worker' = 'web') {
+  validateProduction(process.env, role);
+  const result = environmentSchema.safeParse(process.env);
+  if (!result.success)
+    throw new Error(
+      'Configuration invalid: ' +
+        result.error.issues
+          .map((i) => i.path.join('.') + ': ' + i.message)
+          .join('; '),
+    );
+  return result.data;
 }
 export const addressSchema = z
   .object({

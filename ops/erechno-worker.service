@@ -1,0 +1,34 @@
+[Unit]
+Description=ERechno persistent invoice worker
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=erechno
+Group=erechno
+WorkingDirectory=/opt/erechno
+EnvironmentFile=/etc/erechno/worker.env
+ExecStartPre=/opt/node24/bin/node --import tsx scripts/production-check.ts --worker
+ExecStart=/opt/node24/bin/node --import tsx scripts/worker.ts
+Restart=on-failure
+RestartSec=15
+TimeoutStopSec=180
+KillSignal=SIGTERM
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryMax=1536M
+TasksMax=128
+
+[Install]
+WantedBy=multi-user.target

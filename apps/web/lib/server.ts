@@ -1,10 +1,11 @@
+import { AutopilotService } from '../../../packages/application/src/autopilot';
 import { DeliveryService } from '../../../packages/application/src/delivery';
 import { emailProvider } from '../../../packages/application/src/email-provider';
 import { resolve } from 'node:path';
 import { IncomingService } from '../../../packages/application/src/incoming';
 import { EinvoiceService } from '../../../packages/application/src/einvoice';
 import { complianceRuntime } from '../../../packages/application/src/runtime';
-import { logOperation } from '@flux/observability';
+import { logOperation, acquisitionEvent } from '@flux/observability';
 import 'server-only';
 import { randomUUID } from 'node:crypto';
 import { betterAuth } from 'better-auth';
@@ -16,17 +17,18 @@ import { redirect } from 'next/navigation';
 import { eq, asc } from 'drizzle-orm';
 import { connect, members } from '@flux/db';
 import * as schema from '@flux/db';
-import { environment } from '@flux/shared';
+import { APP_NAME, environment } from '@flux/shared';
 import { InvoiceService } from '@flux/application';
 const env = environment();
 const globalDb = globalThis as typeof globalThis & {
   fluxConnection?: ReturnType<typeof connect>;
 };
 const connection = globalDb.fluxConnection ?? connect(env.DATABASE_URL);
-if (env.APP_ENV !== 'production') globalDb.fluxConnection = connection;
+globalDb.fluxConnection = connection;
 export const db = connection.db;
 export const service = new InvoiceService(db);
-const runtime = complianceRuntime(resolve(process.cwd(), '../..'));
+export const autopilot = new AutopilotService(db);
+const runtime = complianceRuntime(resolve(process.cwd(), '../..'), 'web');
 export const einvoice = new EinvoiceService(
   db,
   connection.pool,
@@ -34,19 +36,31 @@ export const einvoice = new EinvoiceService(
   runtime.archive,
 );
 const transport = env.SMTP_URL
-  ? nodemailer.createTransport(env.SMTP_URL)
+  ? nodemailer.createTransport(env.SMTP_URL, {
+      disableFileAccess: true,
+      disableUrlAccess: true,
+    })
   : null;
 async function send(to: string, subject: string, url: string) {
   if (!transport) throw new Error('MAIL_UNAVAILABLE');
   await transport.sendMail({
     from: env.MAIL_FROM,
     to,
-    subject,
-    text: `${subject}\n\n${url}\n\nFalls Sie diese Anfrage nicht gestellt haben, ignorieren Sie diese E-Mail.`,
+    subject: `${APP_NAME} – ${subject}`,
+    text: `${APP_NAME} – ${subject}\n\n${url}\n\nFalls Sie diese Anfrage nicht gestellt haben, ignorieren Sie diese E-Mail.`,
   });
 }
 export const auth = betterAuth({
-  appName: 'FluxInvoice',
+  databaseHooks: {
+    user: {
+      create: {
+        after: async () => {
+          acquisitionEvent('signup_completed', { route: 'signup' });
+        },
+      },
+    },
+  },
+  appName: APP_NAME,
   logger: {
     log: (level) =>
       logOperation({

@@ -59,10 +59,12 @@ export function BusinessForm({
   kind,
   initial = {},
   id,
+  afterOnboarding = '/dashboard',
 }: {
   kind: 'onboarding' | 'company' | 'customer';
   initial?: Record<string, string>;
   id?: string;
+  afterOnboarding?: '/dashboard' | '/billing';
 }) {
   const [pending, start] = useTransition();
   const [result, setResult] = useState<Result<unknown> | null>(null);
@@ -157,7 +159,7 @@ export function BusinessForm({
             if (r.ok) {
               router.push(
                 kind === 'onboarding'
-                  ? '/dashboard'
+                  ? afterOnboarding
                   : kind === 'customer'
                     ? `/customers/${r.value}`
                     : '/settings/company',

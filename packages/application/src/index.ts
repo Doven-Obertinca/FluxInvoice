@@ -1,3 +1,4 @@
+import { financialIntent } from './financial-rules';
 import { roundMoney, normalizeDecimal } from '@flux/invoice-core';
 import { randomUUID } from 'node:crypto';
 import { and, asc, desc, eq, ilike, sql } from 'drizzle-orm';
@@ -307,6 +308,8 @@ export class InvoiceService {
   async searchWorkspace(p: Principal, raw: unknown) {
     await authorize(this.db, p, 'read');
     const { text, pattern, amount } = searchTerm(raw);
+    const intent = financialIntent(text);
+    if (intent) return [intent];
     if (text.length < 2) return [];
     const [invoices, customers] = await Promise.all([
       this.db
@@ -378,7 +381,7 @@ export class InvoiceService {
           CASE
             WHEN i.status IN ('DRAFT','VALIDATED') AND j.state='FAILED' AND j.last_error_code IS DISTINCT FROM 'VALIDATION_FAILED' THEN 'PROCESSING'
             WHEN i.status IN ('DRAFT','VALIDATED') AND v.valid=false AND (j.state IS NULL OR j.state NOT IN ('QUEUED','VALIDATING','ARCHIVING')) THEN 'VALIDATION'
-            WHEN i.status IN ('FINALIZED','SENT','OVERDUE') AND i.due_date < (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Berlin')::date THEN 'OVERDUE'
+            WHEN i.status IN ('FINALIZED','SENT','OVERDUE') AND NOT EXISTS(SELECT 1 FROM payment_observations po WHERE po.organization_id=i.organization_id AND po.entity_id=i.id AND po.entity_type='invoice' AND po.reversed_at IS NULL) AND i.due_date < (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Berlin')::date THEN 'OVERDUE'
           END AS reason
         FROM invoices i
         JOIN invoice_parties b ON b.organization_id=i.organization_id AND b.invoice_id=i.id AND b.kind='BUYER'
@@ -403,9 +406,9 @@ export class InvoiceService {
         drafts: sql<string>`count(*) FILTER (WHERE status='DRAFT')::text`,
         validated: sql<string>`count(*) FILTER (WHERE status='VALIDATED')::text`,
         total: sql<string>`coalesce(sum(payable) FILTER (WHERE status IN ('DRAFT','VALIDATED')),0)::text`,
-        outstanding: sql<string>`coalesce(sum(payable) FILTER (WHERE status IN ('FINALIZED','SENT','OVERDUE')),0)::text`,
-        overdue: sql<string>`coalesce(sum(payable) FILTER (WHERE status IN ('FINALIZED','SENT','OVERDUE') AND due_date<CURRENT_DATE),0)::text`,
-        paid: sql<string>`coalesce(sum(payable) FILTER (WHERE status='PAID'),0)::text`,
+        outstanding: sql<string>`coalesce(sum(payable) FILTER (WHERE status IN ('FINALIZED','SENT','OVERDUE') AND NOT EXISTS(SELECT 1 FROM payment_observations po WHERE po.organization_id=${s.invoices.organizationId} AND po.entity_id=${s.invoices.id} AND po.entity_type='invoice' AND po.reversed_at IS NULL)),0)::text`,
+        overdue: sql<string>`coalesce(sum(payable) FILTER (WHERE status IN ('FINALIZED','SENT','OVERDUE') AND NOT EXISTS(SELECT 1 FROM payment_observations po WHERE po.organization_id=${s.invoices.organizationId} AND po.entity_id=${s.invoices.id} AND po.entity_type='invoice' AND po.reversed_at IS NULL) AND due_date<(CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Berlin')::date),0)::text`,
+        paid: sql<string>`coalesce(sum(payable) FILTER (WHERE status='PAID' OR (status IN ('FINALIZED','SENT','OVERDUE') AND EXISTS(SELECT 1 FROM payment_observations po WHERE po.organization_id=${s.invoices.organizationId} AND po.entity_id=${s.invoices.id} AND po.entity_type='invoice' AND po.reversed_at IS NULL))),0)::text`,
         ready: sql<string>`count(*) FILTER (WHERE status IN ('DRAFT','VALIDATED') AND EXISTS(SELECT 1 FROM validation_runs v WHERE v.organization_id=${s.invoices.organizationId} AND v.invoice_id=${s.invoices.id} AND v.revision=${s.invoices.revision} AND v.profile='XRECHNUNG' AND v.valid AND NOT EXISTS(SELECT 1 FROM validation_runs n WHERE n.organization_id=v.organization_id AND n.invoice_id=v.invoice_id AND n.revision=v.revision AND n.profile='XRECHNUNG' AND n.created_at>v.created_at AND NOT n.valid)))::text`,
         pending: sql<string>`count(*) FILTER (WHERE finalization_pending)::text`,
       })

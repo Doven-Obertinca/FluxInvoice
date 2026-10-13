@@ -38,7 +38,10 @@ try {
     stdio: 'inherit',
     env,
   });
-  const child = spawn('playwright', ['test'], { stdio: 'inherit', env });
+  const child = spawn('playwright', ['test', ...process.argv.slice(2)], {
+    stdio: 'inherit',
+    env,
+  });
   process.exitCode = await new Promise<number>((resolve) =>
     child.on('exit', (code) => resolve(code ?? 1)),
   );

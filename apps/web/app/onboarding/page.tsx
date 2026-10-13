@@ -1,3 +1,5 @@
+import { selectedPlan } from '../../lib/plan-choice';
+import { APP_NAME } from '@flux/shared';
 import { redirect } from 'next/navigation';
 import { eq } from 'drizzle-orm';
 import { members } from '@flux/db';
@@ -6,22 +8,26 @@ import { BusinessForm } from '../../components/forms';
 export const dynamic = 'force-dynamic';
 export default async function Onboarding() {
   const user = await requireUser();
+  const plan = await selectedPlan();
   const [membership] = await db
     .select()
     .from(members)
     .where(eq(members.userId, user.id))
     .limit(1);
-  if (membership) redirect('/dashboard');
+  if (membership) redirect(plan && plan !== 'FREE' ? '/billing' : '/dashboard');
   return (
     <main className="onboarding">
-      <p className="brand">▧ FluxInvoice</p>
+      <p className="brand">▧ {APP_NAME}</p>
       <p className="eyebrow">01 / IHR ARBEITSBEREICH</p>
       <h1>Bereit für einen klaren Start.</h1>
       <p className="muted">
         Hinterlegen Sie Ihre Unternehmensdaten. Sie bilden die Grundlage Ihrer
         Rechnungsentwürfe.
       </p>
-      <BusinessForm kind="onboarding" />
+      <BusinessForm
+        kind="onboarding"
+        afterOnboarding={plan && plan !== 'FREE' ? '/billing' : '/dashboard'}
+      />
     </main>
   );
 }

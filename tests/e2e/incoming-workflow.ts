@@ -48,6 +48,7 @@ export async function exerciseIncoming(page: Page) {
     .getByRole('button', { name: 'Original importieren', exact: true })
     .click();
   await expect(page).toHaveURL(/incoming\/[a-f0-9-]+$/);
+  const originalUrl = page.url();
   await expect(
     page.getByText('XML-Prüfung bestanden', { exact: true }),
   ).toBeVisible({ timeout: 30000 });
@@ -165,4 +166,5 @@ export async function exerciseIncoming(page: Page) {
   await expect(
     page.getByRole('button', { name: 'Geschäftlich freigeben' }),
   ).toBeDisabled();
+  return originalUrl;
 }

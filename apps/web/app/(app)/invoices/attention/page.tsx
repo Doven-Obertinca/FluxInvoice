@@ -13,7 +13,7 @@ const reasons = {
   ],
   OVERDUE: [
     'Zahlung: überfällig',
-    'Zahlungseingang außerhalb von FluxInvoice abgleichen',
+    'Zahlungseingang außerhalb von ERechno abgleichen',
   ],
 } as const;
 export default async function Attention({

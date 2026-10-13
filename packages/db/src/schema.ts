@@ -20,6 +20,86 @@ import {
 const id = () => uuid('id').primaryKey().defaultRandom();
 const created = (name = 'created_at') =>
   timestamp(name, { withTimezone: true }).notNull().defaultNow();
+export const planEnum = pgEnum('subscription_plan', [
+  'FREE',
+  'STARTER',
+  'BUSINESS',
+  'PRO',
+]);
+export const billingCheckouts = pgTable('billing_checkouts', {
+  organizationId: uuid('organization_id')
+    .primaryKey()
+    .references(() => organizations.id),
+  customerId: text('customer_id').notNull().unique(),
+  sessionId: text('session_id').unique(),
+  subscriptionId: text('subscription_id').unique(),
+  plan: planEnum('plan').notNull(),
+  requestKey: uuid('request_key').notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }),
+  updatedAt: created('updated_at'),
+});
+export const billingEvents = pgTable('billing_events', {
+  id: text('id').primaryKey(),
+  organizationId: uuid('organization_id')
+    .notNull()
+    .references(() => organizations.id),
+  type: text('type').notNull(),
+  createdAt: created(),
+});
+export const subscriptions = pgTable(
+  'organization_subscriptions',
+  {
+    organizationId: uuid('organization_id')
+      .primaryKey()
+      .references(() => organizations.id),
+    plan: planEnum('plan').notNull().default('FREE'),
+    status: text('status').notNull().default('INACTIVE'),
+    periodStart: timestamp('period_start', { withTimezone: true }),
+    periodEnd: timestamp('period_end', { withTimezone: true }),
+    cancelAtPeriodEnd: boolean('cancel_at_period_end').notNull().default(false),
+    providerCustomerId: text('provider_customer_id').unique(),
+    providerSubscriptionId: text('provider_subscription_id').unique(),
+    updatedAt: created('updated_at'),
+  },
+  (t) => [
+    check(
+      'subscription_status_check',
+      sql`${t.status} IN ('INACTIVE','ACTIVE','CANCELLED','PAST_DUE')`,
+    ),
+    check(
+      'subscription_period_check',
+      sql`${t.plan} = 'FREE' OR (${t.periodStart} IS NOT NULL AND ${t.periodEnd} IS NOT NULL AND ${t.periodEnd} > ${t.periodStart})`,
+    ),
+  ],
+);
+export const invoiceUsage = pgTable(
+  'invoice_usage',
+  {
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id),
+    invoiceId: uuid('invoice_id').primaryKey(),
+    period: date('period').notNull(),
+    state: text('state').notNull().default('RESERVED'),
+    consumedAt: timestamp('consumed_at', { withTimezone: true }),
+    createdAt: created(),
+  },
+  (t) => [
+    foreignKey({
+      columns: [t.organizationId, t.invoiceId],
+      foreignColumns: [invoices.organizationId, invoices.id],
+    }),
+    index('invoice_usage_period_idx').on(t.organizationId, t.period),
+    check(
+      'invoice_usage_state_check',
+      sql`${t.state} IN ('RESERVED','CONSUMED','RELEASED')`,
+    ),
+    check(
+      'invoice_usage_consumed_check',
+      sql`(${t.state} = 'CONSUMED') = (${t.consumedAt} IS NOT NULL)`,
+    ),
+  ],
+);
 export const roleEnum = pgEnum('organization_role', [
   'OWNER',
   'ADMIN',
@@ -800,4 +880,340 @@ export const deliveryReceipts = pgTable('delivery_receipts', {
     .notNull()
     .references(() => invoiceDeliveries.id),
   createdAt: created(),
+});
+
+export const financialSources = pgTable(
+  'financial_sources',
+  {
+    id: id(),
+    organizationId: tenant(),
+    entityType: text('entity_type').notNull(),
+    entityId: uuid('entity_id').notNull(),
+    customerId: uuid('customer_id'),
+    supplierKey: text('supplier_key'),
+    fingerprint: text('fingerprint'),
+    data: jsonb('data')
+      .$type<import('../../application/src/financial-rules').Fact>()
+      .notNull(),
+    updatedAt: created('updated_at'),
+  },
+  (t) => [
+    unique().on(t.organizationId, t.entityType, t.entityId),
+    index('financial_sources_customer').on(t.organizationId, t.customerId),
+    index('financial_sources_supplier').on(t.organizationId, t.supplierKey),
+    index('financial_sources_hash').on(t.organizationId, t.fingerprint),
+    check(
+      'financial_source_kind',
+      sql`${t.entityType} IN ('invoice','incoming')`,
+    ),
+  ],
+);
+export const financialActions = pgTable(
+  'financial_actions',
+  {
+    id: id(),
+    organizationId: tenant(),
+    entityType: text('entity_type').notNull(),
+    entityId: uuid('entity_id').notNull(),
+    rule: text('rule').notNull(),
+    ruleVersion: text('rule_version').notNull(),
+    deduplicationKey: text('deduplication_key').notNull(),
+    fingerprint: text('fingerprint').notNull(),
+    status: text('status').notNull().default('OPEN'),
+    severity: text('severity').notNull(),
+    title: text('title').notNull(),
+    reason: text('reason').notNull(),
+    recommendation: text('recommendation').notNull(),
+    facts: jsonb('facts')
+      .$type<Record<string, string | number | boolean | null>>()
+      .notNull(),
+    amount: numeric('amount', { precision: 18, scale: 2 }),
+    dueDay: date('due_day'),
+    relatedId: uuid('related_id'),
+    mandatory: boolean('mandatory').notNull().default(false),
+    snoozedUntil: date('snoozed_until'),
+    detectedAt: created('detected_at'),
+    resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+    resolution: text('resolution'),
+    createdAt: created(),
+    updatedAt: created('updated_at'),
+  },
+  (t) => [
+    unique().on(t.organizationId, t.id),
+    unique().on(t.organizationId, t.deduplicationKey),
+    index('financial_actions_queue').on(
+      t.organizationId,
+      t.status,
+      t.severity,
+      t.dueDay,
+    ),
+    index('financial_actions_entity').on(
+      t.organizationId,
+      t.entityType,
+      t.entityId,
+    ),
+    check(
+      'financial_action_status',
+      sql`${t.status} IN ('OPEN','ACKNOWLEDGED','IN_PROGRESS','RESOLVED','DISMISSED','SUPERSEDED')`,
+    ),
+    check(
+      'financial_action_severity',
+      sql`${t.severity} IN ('INFO','ATTENTION','WARNING','CRITICAL')`,
+    ),
+  ],
+);
+export const autopilotPolicies = pgTable(
+  'autopilot_policies',
+  {
+    organizationId: uuid('organization_id')
+      .primaryKey()
+      .references(() => organizations.id),
+    mode: text('mode').notNull().default('MANUAL'),
+    timezone: text('timezone').notNull().default('Europe/Berlin'),
+    prepareRules: jsonb('prepare_rules')
+      .$type<string[]>()
+      .notNull()
+      .default([]),
+    updatedAt: created('updated_at'),
+  },
+  (t) => [
+    check(
+      'autopilot_mode',
+      sql`${t.mode} IN ('MANUAL','ASSISTED','AUTOPILOT')`,
+    ),
+    check('autopilot_timezone', sql`${t.timezone} = 'Europe/Berlin'`),
+  ],
+);
+export const financialActivity = pgTable(
+  'financial_activity',
+  {
+    id: id(),
+    organizationId: tenant(),
+    actionId: uuid('action_id'),
+    actorId: text('actor_id').notNull(),
+    operation: text('operation').notNull(),
+    rule: text('rule'),
+    ruleVersion: text('rule_version'),
+    facts: jsonb('facts')
+      .$type<Record<string, string | number | boolean | null>>()
+      .notNull(),
+    createdAt: created(),
+  },
+  (t) => [
+    foreignKey({
+      columns: [t.organizationId, t.actionId],
+      foreignColumns: [financialActions.organizationId, financialActions.id],
+    }),
+    index('financial_activity_timeline').on(
+      t.organizationId,
+      t.createdAt,
+      t.id,
+    ),
+  ],
+);
+export const financialConfirmations = pgTable(
+  'financial_confirmations',
+  {
+    id: id(),
+    organizationId: tenant(),
+    actionId: uuid('action_id').notNull(),
+    actorId: text('actor_id').notNull(),
+    operation: text('operation').notNull(),
+    fingerprint: text('fingerprint').notNull(),
+    payload: jsonb('payload').$type<Record<string, string>>().notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    consumedAt: timestamp('consumed_at', { withTimezone: true }),
+    createdAt: created(),
+  },
+  (t) => [
+    foreignKey({
+      columns: [t.organizationId, t.actionId],
+      foreignColumns: [financialActions.organizationId, financialActions.id],
+    }),
+    index('financial_confirmations_actor').on(
+      t.organizationId,
+      t.actorId,
+      t.createdAt,
+    ),
+  ],
+);
+export const paymentObservations = pgTable(
+  'payment_observations',
+  {
+    id: id(),
+    organizationId: tenant(),
+    entityType: text('entity_type').notNull(),
+    entityId: uuid('entity_id').notNull(),
+    paidDay: date('paid_day').notNull(),
+    amount: numeric('amount', { precision: 18, scale: 2 }).notNull(),
+    actorId: text('actor_id').notNull(),
+    reversedAt: timestamp('reversed_at', { withTimezone: true }),
+    createdAt: created(),
+  },
+  (t) => [
+    index('payment_observation_entity').on(
+      t.organizationId,
+      t.entityType,
+      t.entityId,
+    ),
+    check('payment_observation_amount', sql`${t.amount} > 0`),
+    check(
+      'payment_observation_kind',
+      sql`${t.entityType} IN ('invoice','incoming')`,
+    ),
+  ],
+);
+export const incomingFinancialTerms = pgTable(
+  'incoming_financial_terms',
+  {
+    incomingId: uuid('incoming_id').primaryKey(),
+    organizationId: tenant(),
+    dueDay: date('due_day'),
+    discountDay: date('discount_day'),
+    discountRate: numeric('discount_rate', { precision: 5, scale: 2 }),
+    discountBase: numeric('discount_base', { precision: 18, scale: 2 }),
+    actorId: text('actor_id').notNull(),
+    updatedAt: created('updated_at'),
+  },
+  (t) => [
+    foreignKey({
+      columns: [t.organizationId, t.incomingId],
+      foreignColumns: [incomingDocuments.organizationId, incomingDocuments.id],
+    }),
+    check(
+      'financial_terms_discount',
+      sql`(${t.discountDay} IS NULL AND ${t.discountRate} IS NULL AND ${t.discountBase} IS NULL) OR (${t.discountDay} IS NOT NULL AND ${t.discountRate} > 0 AND ${t.discountRate} <= 100 AND ${t.discountBase} > 0)`,
+    ),
+  ],
+);
+export const incomingDuplicateDecisions = pgTable(
+  'incoming_duplicate_decisions',
+  {
+    id: id(),
+    organizationId: tenant(),
+    incomingId: uuid('incoming_id').notNull(),
+    otherId: uuid('other_id').notNull(),
+    decision: text('decision').notNull(),
+    actorId: text('actor_id').notNull(),
+    fingerprint: text('fingerprint').notNull(),
+    createdAt: created(),
+  },
+  (t) => [
+    unique().on(t.organizationId, t.incomingId, t.otherId, t.fingerprint),
+    foreignKey({
+      columns: [t.organizationId, t.incomingId],
+      foreignColumns: [incomingDocuments.organizationId, incomingDocuments.id],
+    }),
+    foreignKey({
+      columns: [t.organizationId, t.otherId],
+      foreignColumns: [incomingDocuments.organizationId, incomingDocuments.id],
+    }),
+    check(
+      'duplicate_decision',
+      sql`${t.decision} IN ('DUPLICATE','NOT_DUPLICATE') AND ${t.incomingId} <> ${t.otherId}`,
+    ),
+  ],
+);
+export const financialDeadlines = pgTable(
+  'financial_deadlines',
+  {
+    id: id(),
+    organizationId: tenant(),
+    entityType: text('entity_type').notNull(),
+    entityId: uuid('entity_id').notNull(),
+    kind: text('kind').notNull(),
+    dueDay: date('due_day').notNull(),
+    updatedAt: created('updated_at'),
+  },
+  (t) => [
+    unique().on(t.organizationId, t.entityType, t.entityId, t.kind),
+    index('financial_deadlines_due').on(t.organizationId, t.dueDay),
+  ],
+);
+export const financialSummaries = pgTable('financial_summaries', {
+  organizationId: uuid('organization_id')
+    .primaryKey()
+    .references(() => organizations.id),
+  data: jsonb('data')
+    .$type<{
+      today: string;
+      receivables7: string;
+      receivables30: string;
+      payables7: string;
+      payables30: string;
+      net7: string;
+      net30: string;
+      overdue: string;
+      balanceKnown: false;
+    }>()
+    .notNull(),
+  updatedAt: created('updated_at'),
+});
+export const customerPaymentMetrics = pgTable(
+  'customer_payment_metrics',
+  {
+    customerId: uuid('customer_id').primaryKey(),
+    organizationId: tenant(),
+    data: jsonb('data')
+      .$type<
+        ReturnType<
+          typeof import('../../application/src/financial-rules').paymentBehavior
+        >
+      >()
+      .notNull(),
+    updatedAt: created('updated_at'),
+  },
+  (t) => [
+    foreignKey({
+      columns: [t.organizationId, t.customerId],
+      foreignColumns: [customers.organizationId, customers.id],
+    }),
+  ],
+);
+export const financialFeedback = pgTable(
+  'financial_feedback',
+  {
+    id: id(),
+    organizationId: tenant(),
+    actorId: text('actor_id').notNull(),
+    actionId: uuid('action_id').notNull(),
+    value: text('value').notNull(),
+    createdAt: created(),
+  },
+  (t) => [
+    unique().on(t.organizationId, t.actorId, t.actionId),
+    foreignKey({
+      columns: [t.organizationId, t.actionId],
+      foreignColumns: [financialActions.organizationId, financialActions.id],
+    }),
+    check(
+      'financial_feedback_value',
+      sql`${t.value} IN ('HELPFUL','IRRELEVANT','HIDE')`,
+    ),
+  ],
+);
+export const financialDigests = pgTable(
+  'financial_digests',
+  {
+    id: id(),
+    organizationId: tenant(),
+    day: date('day').notNull(),
+    fingerprint: text('fingerprint').notNull(),
+    content: jsonb('content')
+      .$type<{
+        titles: string[];
+        count: number;
+        summary: typeof financialSummaries.$inferSelect.data | null;
+      }>()
+      .notNull(),
+    updatedAt: created('updated_at'),
+  },
+  (t) => [unique().on(t.organizationId, t.day)],
+);
+export const autopilotCursors = pgTable('autopilot_cursors', {
+  key: text('key').primaryKey(),
+  organizationId: uuid('organization_id'),
+  entityId: uuid('entity_id'),
+  entityType: text('entity_type').notNull().default('invoice'),
+  updatedAt: created('updated_at'),
 });

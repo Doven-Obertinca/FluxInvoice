@@ -1,3 +1,4 @@
+import { Usage } from '../../../../components/usage';
 import { InvoiceDelivery } from '../../../../components/invoice-delivery';
 import { notFound } from 'next/navigation';
 import { AppError } from '@flux/shared';
@@ -47,6 +48,7 @@ export default async function Invoice({
     );
   return (
     <InvoiceWorkspace key={`${detail.invoice.id}-${detail.invoice.revision}`}>
+      {!detail.invoice.finalizedAt && <Usage principal={p} />}
       <InvoiceLifecycle
         id={detail.invoice.id}
         revision={detail.invoice.revision}

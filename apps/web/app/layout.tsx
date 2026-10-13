@@ -1,9 +1,20 @@
 import type { Metadata } from 'next';
+import {
+  APP_NAME,
+  SEO_DEFAULT_TITLE,
+  SEO_DEFAULT_DESCRIPTION,
+} from '@flux/shared';
+import { APP_URL } from '../lib/brand';
 import '@fontsource-variable/inter';
 import './globals.css';
 export const metadata: Metadata = {
-  title: { default: 'FluxInvoice', template: '%s · FluxInvoice' },
-  description: 'Rechnungen klar und sicher verwalten.',
+  metadataBase: new URL(APP_URL),
+  title: { default: SEO_DEFAULT_TITLE, template: `%s | ${APP_NAME}` },
+  description: SEO_DEFAULT_DESCRIPTION,
+  robots: { index: false, follow: false },
+  verification: process.env.GOOGLE_SITE_VERIFICATION
+    ? { google: process.env.GOOGLE_SITE_VERIFICATION }
+    : undefined,
 };
 export default function RootLayout({
   children,

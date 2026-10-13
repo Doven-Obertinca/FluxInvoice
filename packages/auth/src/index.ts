@@ -4,6 +4,9 @@ import { members } from '@flux/db';
 import { AppError } from '@flux/shared';
 export type Role = 'OWNER' | 'ADMIN' | 'ACCOUNTANT' | 'MEMBER' | 'VIEWER';
 export type Permission =
+  | 'autopilot:respond'
+  | 'autopilot:configure'
+  | 'payment:record'
   | 'incoming:read'
   | 'incoming:import'
   | 'incoming:approve'
@@ -16,6 +19,9 @@ export type Permission =
   | 'members:read';
 const grants: Record<Role, readonly Permission[]> = {
   OWNER: [
+    'autopilot:respond',
+    'autopilot:configure',
+    'payment:record',
     'read',
     'incoming:read',
     'incoming:import',
@@ -28,6 +34,9 @@ const grants: Record<Role, readonly Permission[]> = {
     'members:read',
   ],
   ADMIN: [
+    'autopilot:respond',
+    'autopilot:configure',
+    'payment:record',
     'read',
     'incoming:read',
     'incoming:import',
@@ -40,6 +49,8 @@ const grants: Record<Role, readonly Permission[]> = {
     'members:read',
   ],
   ACCOUNTANT: [
+    'autopilot:respond',
+    'payment:record',
     'incoming:read',
     'incoming:import',
     'incoming:approve',
@@ -50,6 +61,7 @@ const grants: Record<Role, readonly Permission[]> = {
     'invoice:send',
   ],
   MEMBER: [
+    'autopilot:respond',
     'incoming:read',
     'incoming:import',
     'read',

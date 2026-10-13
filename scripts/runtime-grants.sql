@@ -11,3 +11,14 @@ REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 REVOKE DELETE, TRUNCATE ON einvoice_jobs FROM flux_runtime;
 REVOKE DELETE, TRUNCATE ON invoice_deliveries FROM flux_runtime;
 REVOKE UPDATE, DELETE, TRUNCATE ON delivery_receipts FROM flux_runtime;
+
+REVOKE DELETE, TRUNCATE ON invoice_usage FROM flux_runtime;
+-- Only a separate verified billing adapter may mutate paid entitlements.
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON organization_subscriptions FROM flux_runtime;
+
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON billing_checkouts, billing_events FROM flux_runtime;
+
+REVOKE UPDATE, DELETE, TRUNCATE ON financial_activity, incoming_duplicate_decisions FROM flux_runtime;
+REVOKE DELETE, TRUNCATE ON payment_observations FROM flux_runtime;
+REVOKE UPDATE ON payment_observations FROM flux_runtime;
+GRANT UPDATE(reversed_at) ON payment_observations TO flux_runtime;

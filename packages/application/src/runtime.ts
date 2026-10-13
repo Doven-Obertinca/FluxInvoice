@@ -6,11 +6,16 @@ import {
   ArchiveError,
   type Archive,
 } from '@flux/storage';
-import { KositValidator } from '../../einvoice/src/validator';
-export function complianceRuntime(root: string): {
+import { validateProduction } from '@flux/shared';
+import { KositValidator, type Validator } from '../../einvoice/src/validator';
+export function complianceRuntime(
+  root: string,
+  role: 'web' | 'worker' = 'worker',
+): {
   archive: Archive;
-  validator: KositValidator;
+  validator: Validator;
 } {
+  validateProduction(process.env, role);
   const home = resolve(
     process.env.COMPLIANCE_HOME ?? resolve(root, '.local/compliance'),
   );
@@ -37,9 +42,18 @@ export function complianceRuntime(root: string): {
   }
   return {
     archive,
-    validator: new KositValidator({
-      home,
-      java: process.env.JAVA_BIN ?? resolve(home, 'java-bin'),
-    }),
+    validator:
+      role === 'web'
+        ? {
+            async validate() {
+              throw new Error(
+                'WORKER_ONLY_VALIDATION: enqueue validation for the persistent worker',
+              );
+            },
+          }
+        : new KositValidator({
+            home,
+            java: process.env.JAVA_BIN ?? resolve(home, 'java-bin'),
+          }),
   };
 }

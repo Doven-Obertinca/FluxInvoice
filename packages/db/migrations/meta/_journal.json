@@ -64,6 +64,27 @@
       "when": 1791455643361,
       "tag": "0008_invoice_delivery",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1791789480866,
+      "tag": "0009_subscription_usage",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1791798075678,
+      "tag": "0010_billing_checkout",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1791802014900,
+      "tag": "0011_financial_autopilot",
+      "breakpoints": true
     }
   ]
 }

@@ -1,12 +1,15 @@
+import { MorningBrief } from '../../../components/morning-brief';
+import { Usage } from '../../../components/usage';
 import Link from 'next/link';
-import { principal, service } from '../../../lib/server';
+import { principal, service, autopilot } from '../../../lib/server';
 import { Heading, Empty, InvoiceTable } from '../../../components/page';
 import { displayMoney } from '@flux/invoice-core';
 export default async function Dashboard() {
   const p = await principal();
-  const [summary, invoices] = await Promise.all([
+  const [summary, invoices, brief] = await Promise.all([
     service.summary(p),
     service.listInvoices(p),
+    autopilot.brief(p),
   ]);
   return (
     <>
@@ -19,46 +22,51 @@ export default async function Dashboard() {
           Neue Rechnung
         </Link>
       </Heading>
-      <section className="metrics" aria-label="Rechnungskennzahlen">
-        <article>
-          <p>Offene Rechnungen</p>
-          <strong>{displayMoney(summary.outstanding)}</strong>
-          <small>Ausgestellt · noch nicht bezahlt</small>
-        </article>
-        <article>
-          <p>Davon überfällig</p>
-          <strong>{displayMoney(summary.overdue)}</strong>
-          <small>Fällig vor dem heutigen Tag</small>
-        </article>
-        <article>
-          <p>Bezahlt</p>
-          <strong>{displayMoney(summary.paid)}</strong>
-          <small>Als bezahlt erfasste Rechnungen</small>
-        </article>
-        <article>
-          <p>Entwurfsvolumen</p>
-          <strong>{displayMoney(summary.total)}</strong>
-          <small>Noch nicht ausgestellte Rechnungen</small>
-        </article>
-      </section>
-      <section className="panel">
-        <div className="section-heading">
-          <h2>
-            Letzte Rechnungen <span className="count">{summary.count}</span>
-          </h2>
-          <Link href="/invoices">Alle Rechnungen</Link>
-        </div>
-        {invoices.length ? (
-          <InvoiceTable rows={invoices.slice(0, 6)} />
-        ) : (
-          <Empty
-            title="Noch keine Rechnungen"
-            text="Legen Sie einen Kunden an. FluxInvoice prüft Ihre erste E-Rechnung, bevor Sie sie finalisieren."
-            href="/customers"
-            label="Kunden anlegen"
-          />
-        )}
-      </section>
+      <MorningBrief brief={brief} />
+      <Usage principal={p} />
+      <details className="panel">
+        <summary>Rechnungen und Finanzübersicht</summary>
+        <section className="metrics" aria-label="Rechnungskennzahlen">
+          <article>
+            <p>Offene Rechnungen</p>
+            <strong>{displayMoney(summary.outstanding)}</strong>
+            <small>Ausgestellt · noch nicht bezahlt</small>
+          </article>
+          <article>
+            <p>Davon überfällig</p>
+            <strong>{displayMoney(summary.overdue)}</strong>
+            <small>Fällig vor dem heutigen Tag</small>
+          </article>
+          <article>
+            <p>Bezahlt</p>
+            <strong>{displayMoney(summary.paid)}</strong>
+            <small>Als bezahlt erfasste Rechnungen</small>
+          </article>
+          <article>
+            <p>Entwurfsvolumen</p>
+            <strong>{displayMoney(summary.total)}</strong>
+            <small>Noch nicht ausgestellte Rechnungen</small>
+          </article>
+        </section>
+        <section className="panel">
+          <div className="section-heading">
+            <h2>
+              Letzte Rechnungen <span className="count">{summary.count}</span>
+            </h2>
+            <Link href="/invoices">Alle Rechnungen</Link>
+          </div>
+          {invoices.length ? (
+            <InvoiceTable rows={invoices.slice(0, 6)} />
+          ) : (
+            <Empty
+              title="Noch keine Rechnungen"
+              text="Legen Sie einen Kunden an. ERechno prüft Ihre erste E-Rechnung, bevor Sie sie finalisieren."
+              href="/customers"
+              label="Kunden anlegen"
+            />
+          )}
+        </section>
+      </details>
       <div className="bottom-grid">
         <section className="panel">
           <h2>Nächste Schritte</h2>

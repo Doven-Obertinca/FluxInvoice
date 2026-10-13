@@ -1,3 +1,4 @@
+import { APP_NAME } from '@flux/shared';
 import Link from 'next/link';
 import { AuthForm } from '../../components/auth-form';
 export default async function Page({
@@ -10,7 +11,7 @@ export default async function Page({
     <main className="auth-layout">
       <div className="auth-art">
         <Link className="brand" href="/">
-          ▧ FluxInvoice
+          ▧ {APP_NAME}
         </Link>
         <div>
           <p className="eyebrow">WENIGER AUFWAND. MEHR ÜBERBLICK.</p>
@@ -24,7 +25,7 @@ export default async function Page({
         <small>Entwickelt für Unternehmen in Deutschland.</small>
       </div>
       <section className="auth-card">
-        <p className="eyebrow">FLUXINVOICE / KONTO</p>
+        <p className="eyebrow">{APP_NAME} / KONTO</p>
         <h1>Neuer Zugang.</h1>
         <p className="muted">Fordern Sie einen sicheren Link an.</p>
         <AuthForm

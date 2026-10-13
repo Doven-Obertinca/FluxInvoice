@@ -83,7 +83,7 @@ export default async function Invoices({
             text={
               q || status
                 ? 'Passen Sie den Suchbegriff oder den Statusfilter an.'
-                : 'Erfassen Sie Ihre Leistungen. FluxInvoice prüft die E-Rechnungsangaben vor der Finalisierung.'
+                : 'Erfassen Sie Ihre Leistungen. ERechno prüft die E-Rechnungsangaben vor der Finalisierung.'
             }
             href={q || status ? '/invoices' : '/invoices/new'}
             label={q || status ? 'Filter zurücksetzen' : 'Rechnung erstellen'}

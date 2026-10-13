@@ -10,3 +10,6 @@ test-results/
 .local/
 
 apps/web/public/reader/
+
+# Vercel link metadata and downloaded environment files
+.vercel/

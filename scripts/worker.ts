@@ -1,3 +1,4 @@
+import { AutopilotService } from '../packages/application/src/autopilot';
 import { DeliveryService } from '../packages/application/src/delivery';
 import { emailProvider } from '../packages/application/src/email-provider';
 import { resolve } from 'node:path';
@@ -7,10 +8,11 @@ import { complianceRuntime } from '../packages/application/src/runtime';
 import 'dotenv/config';
 import { setTimeout } from 'node:timers/promises';
 import { environment } from '@flux/shared';
-import { connect } from '@flux/db';
+import { connect, auditEvents } from '@flux/db';
+import { and, eq } from 'drizzle-orm';
 import { processOne } from '../packages/application/src/outbox';
-import { logOperation, metric } from '@flux/observability';
-const { db, pool } = connect(environment().DATABASE_URL);
+import { logOperation, metric, acquisitionEvent } from '@flux/observability';
+const { db, pool } = connect(environment('worker').DATABASE_URL);
 const runtime = complianceRuntime(resolve('.'));
 const einvoice = new EinvoiceService(
   db,
@@ -24,6 +26,8 @@ const incoming = new IncomingService(
   runtime.validator,
   runtime.archive,
 );
+const autopilot = new AutopilotService(db);
+let nextReconcile = 0;
 let running = true;
 process.on('SIGTERM', () => {
   running = false;
@@ -50,6 +54,39 @@ const handlers = Object.fromEntries(
   types.map((type) => [
     type,
     async (job: import('../packages/application/src/outbox').Job) => {
+      if (job.eventType === 'invoice.created')
+        acquisitionEvent('invoice_started', { route: 'workspace' });
+      if (job.eventType === 'invoice.finalized') {
+        acquisitionEvent('invoice_finalized', {
+          route: 'workspace',
+          result: 'success',
+        });
+        const [audit] = await db
+          .select({ metadata: auditEvents.metadata })
+          .from(auditEvents)
+          .where(
+            and(
+              eq(auditEvents.organizationId, job.organizationId),
+              eq(auditEvents.entityId, job.entityId),
+              eq(auditEvents.eventType, 'invoice.finalized'),
+            ),
+          )
+          .limit(1);
+        if (audit?.metadata.usagePlan === 'FREE') {
+          const count = audit.metadata.usageCount;
+          if (count === 1) acquisitionEvent('free_invoice_1', { plan: 'FREE' });
+          if (count === 2) acquisitionEvent('free_invoice_2', { plan: 'FREE' });
+          if (count === 3) {
+            acquisitionEvent('free_invoice_3', { plan: 'FREE' });
+            acquisitionEvent('free_quota_reached', { plan: 'FREE' });
+          }
+        }
+      }
+      if (
+        job.eventType.startsWith('invoice.') ||
+        job.eventType.startsWith('einvoice.')
+      )
+        await autopilot.reconcile(job.organizationId, 'invoice', job.entityId);
       logOperation({
         requestId: job.requestId,
         operation: job.eventType,
@@ -58,11 +95,17 @@ const handlers = Object.fromEntries(
     },
   ]),
 );
+handlers['financial.invoice.changed'] = (job) =>
+  autopilot.reconcile(job.organizationId, 'invoice', job.entityId);
+handlers['financial.incoming.changed'] = (job) =>
+  autopilot.reconcile(job.organizationId, 'incoming', job.entityId);
 const delivery = new DeliveryService(db, runtime.archive, emailProvider());
 handlers['delivery.requested'] = (job) =>
   delivery.process(job.organizationId, job.entityId);
-handlers['incoming.process'] = (job) =>
-  incoming.process(job.organizationId, job.entityId);
+handlers['incoming.process'] = async (job) => {
+  await incoming.process(job.organizationId, job.entityId);
+  await autopilot.reconcile(job.organizationId, 'incoming', job.entityId);
+};
 handlers['einvoice.requested'] = async (job) => {
   const started = performance.now();
   try {
@@ -88,6 +131,19 @@ handlers['einvoice.requested'] = async (job) => {
 };
 try {
   while (running) {
+    if (Date.now() >= nextReconcile) {
+      nextReconcile = Date.now() + 10000;
+      try {
+        await autopilot.pulse();
+      } catch {
+        logOperation({
+          requestId: crypto.randomUUID(),
+          operation: 'autopilot.reconcile',
+          result: 'failed',
+          errorCode: 'RECONCILE_RETRY_REQUIRED',
+        });
+      }
+    }
     if (!(await processOne(db, handlers))) await setTimeout(1000);
   }
 } finally {

@@ -1,3 +1,4 @@
+import { APP_NAME } from '@flux/shared';
 import { WorkspaceTools } from '../../components/workspace-tools';
 import Link from 'next/link';
 import { Layers3 } from 'lucide-react';
@@ -22,7 +23,7 @@ export default async function AppLayout({
           <span className="brand-symbol">
             <Layers3 size={23} />
           </span>
-          FluxInvoice
+          {APP_NAME}
         </Link>
         <div className="mobile-signout">
           <SignOut />

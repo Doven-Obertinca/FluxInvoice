@@ -14,3 +14,4 @@ export function logOperation(data: {
 // Low-cardinality instruments. A deployment may attach its OpenTelemetry SDK;
 // no tenant, invoice, email, reference or document content is a metric label.
 export { metric } from './metrics';
+export { acquisitionEvent } from './acquisition';

@@ -94,6 +94,15 @@ export class DeliveryService {
       entityId: id,
       metadata,
     });
+    if (eventType !== 'delivery.settings.updated')
+      await tx
+        .insert(s.outbox)
+        .values({
+          organizationId: p.organizationId,
+          entityId: id,
+          eventType: 'financial.invoice.changed',
+          requestId: p.requestId,
+        });
   }
   private async authoritative(
     db: s.Database | s.Transaction,

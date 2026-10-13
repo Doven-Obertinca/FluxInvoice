@@ -4,8 +4,10 @@ import { usePathname } from 'next/navigation';
 import { LayoutDashboard, Users, FileText, Settings } from 'lucide-react';
 const routes = [
   { Icon: LayoutDashboard, label: 'Übersicht', href: '/dashboard' },
+  { Icon: LayoutDashboard, label: 'Autopilot', href: '/autopilot' },
   { Icon: FileText, label: 'Rechnungen', href: '/invoices' },
   { Icon: Users, label: 'Kunden', href: '/customers' },
+  { Icon: FileText, label: 'Tarif & Nutzung', href: '/billing' },
   { Icon: Settings, label: 'Einstellungen', href: '/settings/company' },
 ];
 export function Navigation() {

@@ -51,6 +51,15 @@ export class IncomingService {
       entityId: id,
       metadata: {},
     });
+    if (eventType !== 'incoming.downloaded')
+      await tx
+        .insert(s.outbox)
+        .values({
+          organizationId: p.organizationId,
+          entityId: id,
+          eventType: 'financial.incoming.changed',
+          requestId: p.requestId,
+        });
   }
   async receive(
     p: Principal,
@@ -296,6 +305,7 @@ export class IncomingService {
     });
   }
   async process(organizationId: string, id: string) {
+    if (process.env.VERCEL === '1') throw new Error('WORKER_ONLY_PROCESSING');
     const connection = await this.pool.connect();
     try {
       await connection.query(

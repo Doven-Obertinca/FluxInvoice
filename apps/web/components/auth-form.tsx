@@ -9,9 +9,11 @@ const client = createAuthClient();
 export function AuthForm({
   mode,
   token,
+  afterSignIn = '/dashboard',
 }: {
   mode: 'sign-in' | 'sign-up' | 'forgot' | 'reset';
   token?: string;
+  afterSignIn?: '/dashboard' | '/billing';
 }) {
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState('');
@@ -51,7 +53,7 @@ export function AuthForm({
               'Die Anfrage konnte nicht abgeschlossen werden. Prüfen Sie Ihre Angaben und gegebenenfalls die E-Mail-Bestätigung.',
             );
           else if (mode === 'sign-in') {
-            router.push('/dashboard');
+            router.push(afterSignIn);
             router.refresh();
           } else if (mode === 'sign-up')
             setMessage(

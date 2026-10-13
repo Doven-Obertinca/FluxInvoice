@@ -1,3 +1,4 @@
+import { AutopilotService } from '../packages/application/src/autopilot';
 import { dropTestDatabase } from './database-cleanup';
 import { resolve } from 'node:path';
 import { validCases } from '../packages/einvoice/fixtures/corpus';
@@ -73,6 +74,15 @@ beforeAll(async () => {
     randomUUID(),
   );
   p = { organizationId, userId: 'issuer', requestId: randomUUID() };
+  // This fiscal suite issues many invoices; exercise it with a real paid entitlement.
+  // The separate billing suite verifies Free admission, expiry and contention.
+  await db.insert(s.subscriptions).values({
+    organizationId,
+    plan: 'PRO',
+    status: 'ACTIVE',
+    periodStart: new Date(Date.now() - 86400000),
+    periodEnd: new Date(Date.now() + 86400000),
+  });
   const buyer = supported.buyer;
   customerId = await invoices.createCustomer(p, {
     name: buyer.name,
@@ -241,7 +251,26 @@ describe('authoritative XRechnung and fiscal lifecycle', () => {
     expect((await invoices.attention(p)).find((r) => r.id === id)?.reason).toBe(
       'OVERDUE',
     );
-    expect((await invoices.invoice(p, id)).invoice.status).toBe('FINALIZED');
+    const before = (await invoices.invoice(p, id)).invoice;
+    expect(before.status).toBe('FINALIZED');
+    const engine = new AutopilotService(db);
+    await engine.reconcile(p.organizationId, 'invoice', id);
+    const action = (await engine.brief(p)).actions.find(
+      (a) => a.entityId === id && a.rule === 'INVOICE_OVERDUE',
+    )!;
+    expect(action).toBeDefined();
+    const documents = (await service.history(p, id)).documents;
+    const bytesBefore = (await service.download(p, documents[0]!.id)).bytes;
+    const ticket = await engine.preparePayment(p, action.id, '2025-01-03');
+    await engine.confirmPayment(p, ticket.id);
+    expect((await invoices.invoice(p, id)).invoice).toEqual(before);
+    expect((await service.download(p, documents[0]!.id)).bytes).toEqual(
+      bytesBefore,
+    );
+    expect(
+      (await invoices.attention(p)).find((r) => r.id === id),
+    ).toBeUndefined();
+    expect((await engine.detail(p, action.id)).status).toBe('RESOLVED');
   }, 150000);
   it('keeps a reserved number and frozen draft through archive failure and retry', async () => {
     const id = await draft();
@@ -334,6 +363,12 @@ it('upload success followed by SQL failure remains recoverable with the same obj
       .from(s.einvoiceJobs)
       .where(eq(s.einvoiceJobs.id, jobId));
     expect(failed?.lastErrorCode).toBe('FINALIZATION_FAILED');
+    const [usage] = await db
+      .select()
+      .from(s.invoiceUsage)
+      .where(eq(s.invoiceUsage.invoiceId, id));
+    expect(usage?.state).toBe('RESERVED');
+    expect(usage?.consumedAt).toBeNull();
     expect(failed?.objectKey).toBeTruthy();
     expect((await service.history(p, id)).documents).toHaveLength(0);
     const orphan = await archive.get(
@@ -349,6 +384,11 @@ it('upload success followed by SQL failure remains recoverable with the same obj
   await service.process(p.organizationId, jobId);
   const result = await invoices.invoice(p, id);
   expect(result.invoice.number).toBe(failed!.number);
+  const [usage] = await db
+    .select()
+    .from(s.invoiceUsage)
+    .where(eq(s.invoiceUsage.invoiceId, id));
+  expect(usage?.state).toBe('CONSUMED');
   expect((await service.history(p, id)).documents).toHaveLength(1);
 }, 150000);
 it('historical documents survive later changes to company and customer masters', async () => {
@@ -754,6 +794,13 @@ it('delivers only authoritative bytes with tenant isolation, audited retries, de
       .digest('hex'),
   );
   expect((await mail.history(p, id))[0]?.status).toBe('BOUNCED');
+  const engine = new AutopilotService(db);
+  await engine.reconcile(p.organizationId, 'invoice', id);
+  expect(
+    (await engine.brief(p)).actions.some(
+      (a) => a.entityId === id && a.rule === 'DELIVERY_FAILED',
+    ),
+  ).toBe(true);
   await pool.query(
     "UPDATE invoice_deliveries SET created_at=created_at-interval '1 minute' WHERE invoice_id=$1",
     [id],

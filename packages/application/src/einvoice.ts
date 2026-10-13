@@ -5,6 +5,11 @@ import * as s from '@flux/db';
 import { authorize, type Principal } from '@flux/auth';
 import { appendAudit, digest } from '@flux/audit';
 import { AppError } from '@flux/shared';
+import {
+  reserveInvoiceUsage,
+  consumeInvoiceUsage,
+  releaseInvoiceUsage,
+} from './billing';
 import { assertEditable, calculate, transition } from '@flux/invoice-core';
 import {
   manifest,
@@ -167,6 +172,8 @@ export class EinvoiceService {
         return job.id;
       }
       assertEditable(detail.invoice.status);
+      if (kind === 'FINALIZE')
+        await reserveInvoiceUsage(tx, p.organizationId, invoiceId);
       if (!job) {
         if (detail.invoice.finalizationPending)
           throw new AppError('CONFLICT', 'Die Finalisierung läuft bereits.');
@@ -333,6 +340,7 @@ export class EinvoiceService {
   // Worker only. A PostgreSQL session lock fences duplicate outbox deliveries without
   // holding an open database transaction during validation or object storage I/O.
   async process(organizationId: string, jobId: string) {
+    if (process.env.VERCEL === '1') throw new Error('WORKER_ONLY_PROCESSING');
     const client = await this.pool.connect();
     let locked = false;
     try {
@@ -467,6 +475,7 @@ export class EinvoiceService {
                     eq(s.invoices.id, job!.invoiceId),
                   ),
                 );
+            await reserveInvoiceUsage(tx, organizationId, job!.invoiceId);
             const number = await allocateNumber(
               tx,
               organizationId,
@@ -553,12 +562,17 @@ export class EinvoiceService {
             retentionPolicyVersion: 'DE-INVOICE-8Y-CALENDAR-1',
             retainUntil: job!.retentionUntil!,
           });
+          const usage = await consumeInvoiceUsage(
+            tx,
+            organizationId,
+            job!.invoiceId,
+          );
           await tx
             .update(s.invoices)
             .set({
               status: transition(current.invoice.status, 'FINALIZED'),
               number: job!.number,
-              finalizedAt: new Date(),
+              finalizedAt: usage.finalizedAt,
               finalizationPending: false,
               updatedAt: new Date(),
             })
@@ -577,6 +591,8 @@ export class EinvoiceService {
             })
             .where(this.scope(p, job!.id));
           await this.event(tx, p, 'invoice.finalized', job!.invoiceId, {
+            usagePlan: usage.plan,
+            usageCount: usage.used,
             jobId: job!.id,
             sha256: hash,
             profileId,
@@ -592,17 +608,19 @@ export class EinvoiceService {
           await this.fail(
             p,
             fresh,
-            error instanceof ArchiveError
-              ? error.code
-              : error instanceof Error &&
-                  [
-                    'SNAPSHOT_CHANGED',
-                    'PROFILE_UNAVAILABLE',
-                    'VALIDATOR_UNAVAILABLE',
-                    'ISSUANCE_VALIDATION_FAILED',
-                  ].includes(error.message)
-                ? error.message
-                : 'FINALIZATION_FAILED',
+            error instanceof AppError && error.code === 'RATE_LIMIT'
+              ? 'QUOTA_LIMIT'
+              : error instanceof ArchiveError
+                ? error.code
+                : error instanceof Error &&
+                    [
+                      'SNAPSHOT_CHANGED',
+                      'PROFILE_UNAVAILABLE',
+                      'VALIDATOR_UNAVAILABLE',
+                      'ISSUANCE_VALIDATION_FAILED',
+                    ].includes(error.message)
+                  ? error.message
+                  : 'FINALIZATION_FAILED',
           );
         throw new Error('EINVOICE_RETRY_REQUIRED', { cause: error });
       }
@@ -634,8 +652,9 @@ export class EinvoiceService {
       if (
         job.kind === 'FINALIZE' &&
         !job.number &&
-        code === 'VALIDATION_FAILED'
-      )
+        ['VALIDATION_FAILED', 'QUOTA_LIMIT'].includes(code)
+      ) {
+        await releaseInvoiceUsage(tx, p.organizationId, job.invoiceId);
         await tx
           .update(s.invoices)
           .set({ finalizationPending: false })
@@ -645,6 +664,7 @@ export class EinvoiceService {
               eq(s.invoices.id, job.invoiceId),
             ),
           );
+      }
       await this.event(tx, p, 'einvoice.failed', job.invoiceId, {
         jobId: job.id,
         code,

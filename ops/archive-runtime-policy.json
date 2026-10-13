@@ -1,0 +1,42 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "InspectOnlyTheArchiveBucket",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetBucketVersioning",
+        "s3:GetBucketObjectLockConfiguration",
+        "s3:GetEncryptionConfiguration"
+      ],
+      "Resource": "arn:aws:s3:::${ARCHIVE_BUCKET}"
+    },
+    {
+      "Sid": "WriteRetainedAndReadVersionedArtifacts",
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject",
+        "s3:PutObjectRetention",
+        "s3:GetObject",
+        "s3:GetObjectVersion",
+        "s3:GetObjectRetention"
+      ],
+      "Resource": "arn:aws:s3:::${ARCHIVE_BUCKET}/*"
+    },
+    {
+      "Sid": "UseOnlyArchiveKeyThroughS3",
+      "Effect": "Allow",
+      "Action": ["kms:GenerateDataKey", "kms:Decrypt"],
+      "Resource": "${ARCHIVE_KMS_KEY_ARN}",
+      "Condition": {
+        "StringEquals": { "kms:ViaService": "s3.${AWS_REGION}.amazonaws.com" },
+        "StringLike": {
+          "kms:EncryptionContext:aws:s3:arn": [
+            "arn:aws:s3:::${ARCHIVE_BUCKET}",
+            "arn:aws:s3:::${ARCHIVE_BUCKET}/*"
+          ]
+        }
+      }
+    }
+  ]
+}

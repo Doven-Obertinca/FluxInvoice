@@ -1,3 +1,4 @@
+import { requireCapability } from '@flux/shared';
 import nodemailer from 'nodemailer';
 import { email, emailHtml } from './email-template';
 export interface DeliveryEnvelope {
@@ -52,6 +53,7 @@ export function emailProvider(): EmailProvider {
   return {
     name: 'smtp',
     async send(e) {
+      requireCapability('transactionalEmail');
       const url = process.env.SMTP_URL;
       if (
         !url ||

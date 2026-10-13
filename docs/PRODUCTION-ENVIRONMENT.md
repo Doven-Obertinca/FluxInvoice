@@ -56,3 +56,39 @@ The worker uses the common DB/archive settings above; its current shared environ
 Secret names: DATABASE_URL, BILLING_DATABASE_URL, BETTER_AUTH_SECRET, SMTP_URL, DELIVERY_GATEWAY_TOKEN, DELIVERY_WEBHOOK_SECRET, STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN. Configuration errors contain names and requirements, not values. Only `.env.example` is tracked; credential files/local infrastructure are excluded. Working-tree scans found no live Stripe key, AWS access-key pattern or private-key block outside ignored local data. The same patterns found no matches across all four reachable Git commits. This remains a limited pattern audit, not a certification that every secret type, unreachable history or externally issued credential is clean; rotate any credentials previously shared or exposed.
 
 Dependency audit: `npm audit --omit=dev` reports zero runtime vulnerabilities. The full audit reports five high-severity entries in the ESLint → fast-glob → micromatch → braces development dependency chain. The upstream advisory [GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm) lists no patched braces release. These tools process trusted repository glob patterns during lint/build; they are not an application input endpoint. Do not apply the suggested forced downgrade of eslint-config-next to Next 14. Track an upstream fix and avoid accepting untrusted glob patterns in tooling.
+
+## Explicit zero-infrastructure beta on Vercel
+
+Set `ERECHNO_BETA_MODE=true`, `APP_ENV=production`, `BILLING_ENABLED=false`,
+`APP_URL=https://erechno.de`, and `BETTER_AUTH_URL=https://erechno.de`.
+Keep the configured random `BETTER_AUTH_SECRET` and restricted Neon `DATABASE_URL`
+with `sslmode=verify-full`. These security requirements remain mandatory.
+
+Beta overrides `ARCHIVE_MODE`: all archival capabilities are disabled even if
+`S3_OBJECT_LOCK` or old AWS settings remain. Remove `ARCHIVE_MODE`, `ARCHIVE_BUCKET`,
+`ARCHIVE_KMS_KEY_ARN`, `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and
+`AWS_SESSION_TOKEN` from the beta web environment. No alternate archive stores data.
+Remove absent/unavailable `SMTP_URL` and `MAIL_FROM`; do not use placeholders.
+Leave Stripe and billing database credentials unset. Remove delivery gateway settings
+and do not schedule worker/reconciliation jobs for this deployment.
+
+Safe beta features: public pages, verified-account sign-in, onboarding, customer
+management, invoice drafts, previews, and browser document reading/import into drafts.
+Finalization, immutable archive reads/writes, invoice delivery/receipts, KoSIT job
+submission and processing, incoming invoice archival/import/approval/revalidation,
+and subscriptions are unavailable. Server commands reject unavailable operations
+before database mutations. The browser reader is not compliance validation.
+
+Without SMTP, new signup, verification mail and password recovery are explicitly
+unavailable. Existing verified accounts can sign in; verification, password rules,
+rate limiting, origin checking, and secure sessions remain enforced. No test-login
+or automatic verification is introduced. Add a provider-authenticated `smtps://`
+`SMTP_URL` and verified `MAIL_FROM` later to restore signup/recovery while retaining
+beta. Email transport success requires provider acceptance; archive/delivery remain
+disabled. Never set `APP_ENV=test` to bypass verification on Vercel.
+
+For full production, remove the beta flag or set it to `false` and configure the
+complete existing production inventory above. Strict SMTP, S3 Object Lock/KMS,
+AWS, database TLS, authentication and billing checks remain in force. The persistent
+Java/KoSIT worker must run externally, never in Vercel. S3 writes still verify actual
+bucket versioning, lock, encryption and retained object evidence.

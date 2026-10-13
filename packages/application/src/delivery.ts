@@ -1,3 +1,4 @@
+import { requireCapability } from '@flux/shared';
 import { randomUUID, createHmac, timingSafeEqual } from 'node:crypto';
 import { sql, and, eq } from 'drizzle-orm';
 import { z } from 'zod';
@@ -95,14 +96,12 @@ export class DeliveryService {
       metadata,
     });
     if (eventType !== 'delivery.settings.updated')
-      await tx
-        .insert(s.outbox)
-        .values({
-          organizationId: p.organizationId,
-          entityId: id,
-          eventType: 'financial.invoice.changed',
-          requestId: p.requestId,
-        });
+      await tx.insert(s.outbox).values({
+        organizationId: p.organizationId,
+        entityId: id,
+        eventType: 'financial.invoice.changed',
+        requestId: p.requestId,
+      });
   }
   private async authoritative(
     db: s.Database | s.Transaction,
@@ -213,6 +212,7 @@ export class DeliveryService {
     ).rows as unknown as Attempt[];
   }
   async enqueue(p: Principal, id: string, raw: unknown) {
+    requireCapability('invoiceDelivery');
     z.uuid().parse(id);
     const input = sendSchema.parse(raw);
     const hash = digest({ id, ...input });
@@ -289,6 +289,8 @@ export class DeliveryService {
     });
   }
   async process(org: string, id: string) {
+    requireCapability('backgroundProcessing');
+    requireCapability('invoiceDelivery');
     // Persist the claim BEFORE external I/O. Never automatically retry an ambiguous SMTP submission.
     const result = await this.db.execute(
       sql`UPDATE invoice_deliveries SET claimed_at=now(),provider=${this.provider.name} WHERE organization_id=${org} AND id=${id} AND channel='EMAIL' AND status='QUEUED' AND claimed_at IS NULL RETURNING *`,
@@ -385,6 +387,7 @@ export class DeliveryService {
     });
   }
   async receipt(body: string, timestamp: string, signature: string) {
+    requireCapability('invoiceDelivery');
     const secret = process.env.DELIVERY_WEBHOOK_SECRET;
     if (
       !secret ||

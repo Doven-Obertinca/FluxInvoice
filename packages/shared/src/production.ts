@@ -38,6 +38,9 @@ export function validateProduction(
 ) {
   if (!hostedEnvironment(e)) return;
   const errors: string[] = [];
+  const beta = e.ERECHNO_BETA_MODE === 'true';
+  if (e.ERECHNO_BETA_MODE && !['true', 'false'].includes(e.ERECHNO_BETA_MODE))
+    errors.push('ERECHNO_BETA_MODE must be true or false');
   const require = (name: string) => {
     if (!e[name]?.trim()) errors.push(`${name} is required`);
   };
@@ -48,11 +51,15 @@ export function validateProduction(
     'BETTER_AUTH_SECRET',
     'BETTER_AUTH_URL',
     'APP_URL',
-    'SMTP_URL',
-    'MAIL_FROM',
-    'ARCHIVE_BUCKET',
-    'ARCHIVE_KMS_KEY_ARN',
-    'AWS_REGION',
+    ...(!beta
+      ? [
+          'SMTP_URL',
+          'MAIL_FROM',
+          'ARCHIVE_BUCKET',
+          'ARCHIVE_KMS_KEY_ARN',
+          'AWS_REGION',
+        ]
+      : []),
   ])
     require(name);
   for (const name of ['APP_URL', 'BETTER_AUTH_URL', 'DELIVERY_GATEWAY_URL']) {
@@ -101,22 +108,23 @@ export function validateProduction(
       errors.push((error as Error).message);
     }
   }
-  try {
-    const u = new URL(e.SMTP_URL ?? '');
-    if (
-      u.protocol !== 'smtps:' ||
-      !publicHost(u.hostname) ||
-      !u.username ||
-      !u.password ||
-      u.search ||
-      u.hash
-    )
-      throw Error();
-  } catch {
-    errors.push(
-      'SMTP_URL requires authenticated smtps:// on a public provider host',
-    );
-  }
+  if (!beta || e.SMTP_URL)
+    try {
+      const u = new URL(e.SMTP_URL ?? '');
+      if (
+        u.protocol !== 'smtps:' ||
+        !publicHost(u.hostname) ||
+        !u.username ||
+        !u.password ||
+        u.search ||
+        u.hash
+      )
+        throw Error();
+    } catch {
+      errors.push(
+        'SMTP_URL requires authenticated smtps:// on a public provider host',
+      );
+    }
   for (const name of ['MAIL_FROM', 'DELIVERY_FROM', 'SUPPORT_EMAIL']) {
     if (name === 'DELIVERY_FROM' && role === 'worker') require(name);
     if (
@@ -126,33 +134,35 @@ export function validateProduction(
     )
       errors.push(`${name} requires a real provider-verified email address`);
   }
-  if (e.ARCHIVE_MODE !== 'S3_OBJECT_LOCK')
+  if (!beta && e.ARCHIVE_MODE !== 'S3_OBJECT_LOCK')
     errors.push(
       'ARCHIVE_MODE must be S3_OBJECT_LOCK; local disk is not production storage',
     );
   if (e.DELIVERY_GATEWAY_URL) require('DELIVERY_GATEWAY_TOKEN');
   // The default AWS SDK chain cannot exchange a Vercel OIDC token by itself.
-  if (e.VERCEL === '1') {
+  if (!beta && e.VERCEL === '1') {
     require('AWS_ACCESS_KEY_ID');
     require('AWS_SECRET_ACCESS_KEY');
   }
-  if (!!e.AWS_ACCESS_KEY_ID !== !!e.AWS_SECRET_ACCESS_KEY)
+  if (!beta && !!e.AWS_ACCESS_KEY_ID !== !!e.AWS_SECRET_ACCESS_KEY)
     errors.push(
       'AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY must be supplied together',
     );
   if (
+    !beta &&
     e.ARCHIVE_BUCKET &&
     !/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(e.ARCHIVE_BUCKET)
   )
     errors.push('ARCHIVE_BUCKET requires a valid S3 bucket name');
   if (
+    !beta &&
     e.ARCHIVE_KMS_KEY_ARN &&
     !/^arn:aws[a-z-]*:kms:[a-z0-9-]+:[0-9]{12}:key\/[a-zA-Z0-9-]+$/.test(
       e.ARCHIVE_KMS_KEY_ARN,
     )
   )
     errors.push('ARCHIVE_KMS_KEY_ARN requires a concrete KMS key ARN');
-  if (e.AWS_REGION && !/^[a-z]{2}(?:-[a-z]+)+-\d$/.test(e.AWS_REGION))
+  if (!beta && e.AWS_REGION && !/^[a-z]{2}(?:-[a-z]+)+-\d$/.test(e.AWS_REGION))
     errors.push('AWS_REGION requires an AWS region identifier');
   if (e.DELIVERY_WEBHOOK_SECRET && e.DELIVERY_WEBHOOK_SECRET.length < 32)
     errors.push('DELIVERY_WEBHOOK_SECRET requires at least 32 characters');

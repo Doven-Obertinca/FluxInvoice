@@ -1,3 +1,4 @@
+import { runtimeCapabilities } from '@flux/shared';
 import Link from 'next/link';
 import { authorize, can } from '@flux/auth';
 import { principal, incoming, db } from '../../../lib/server';
@@ -27,7 +28,14 @@ export default async function Incoming({
         description="Originale erhalten, Angaben verstehen und bewusst freigeben."
       />
       <InvoiceDirections current={problems ? 'problems' : 'incoming'} />
-      {can(role.role, 'incoming:import') && <IncomingUpload />}
+      {runtimeCapabilities().compliantArchive &&
+        can(role.role, 'incoming:import') && <IncomingUpload />}
+      {!runtimeCapabilities().compliantArchive && (
+        <p className="notice">
+          Die Archivierung und Freigabe eingehender Rechnungen ist noch nicht
+          aktiviert. Dokumente können Sie im kostenlosen Viewer ansehen.
+        </p>
+      )}
       <section className="panel">
         <h2>{problems ? 'Prüfbedarf im Eingang' : 'Posteingang'}</h2>
         {!rows.length ? (

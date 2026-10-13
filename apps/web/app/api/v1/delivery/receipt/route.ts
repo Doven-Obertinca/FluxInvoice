@@ -1,3 +1,4 @@
+import { CapabilityUnavailableError } from '@flux/shared';
 import { delivery } from '../../../../../lib/server';
 export async function POST(request: Request) {
   if (Number(request.headers.get('content-length') ?? 0) > 16384)
@@ -23,7 +24,12 @@ export async function POST(request: Request) {
       request.headers.get('x-delivery-signature') ?? '',
     );
     return new Response(null, { status: 204 });
-  } catch {
+  } catch (error) {
+    if (error instanceof CapabilityUnavailableError)
+      return Response.json(
+        { code: error.code, message: error.message },
+        { status: 503 },
+      );
     return new Response(null, { status: 400 });
   }
 }

@@ -1,3 +1,4 @@
+import { requireCapability } from '@flux/shared';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import type { Pool } from 'pg';
 import { z } from 'zod';
@@ -106,6 +107,9 @@ export class EinvoiceService {
     kind: 'VALIDATE' | 'FINALIZE',
     key: string,
   ) {
+    requireCapability(
+      kind === 'FINALIZE' ? 'invoiceFinalization' : 'invoiceValidation',
+    );
     z.uuid().parse(invoiceId);
     z.uuid().parse(key);
     z.number().int().positive().parse(revision);
@@ -340,6 +344,8 @@ export class EinvoiceService {
   // Worker only. A PostgreSQL session lock fences duplicate outbox deliveries without
   // holding an open database transaction during validation or object storage I/O.
   async process(organizationId: string, jobId: string) {
+    requireCapability('backgroundProcessing');
+    requireCapability('compliantArchive');
     if (process.env.VERCEL === '1') throw new Error('WORKER_ONLY_PROCESSING');
     const client = await this.pool.connect();
     let locked = false;

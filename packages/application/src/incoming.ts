@@ -1,3 +1,4 @@
+import { requireCapability } from '@flux/shared';
 import { randomUUID } from 'node:crypto';
 import type { Pool } from 'pg';
 import { and, eq, desc, sql } from 'drizzle-orm';
@@ -52,14 +53,12 @@ export class IncomingService {
       metadata: {},
     });
     if (eventType !== 'incoming.downloaded')
-      await tx
-        .insert(s.outbox)
-        .values({
-          organizationId: p.organizationId,
-          entityId: id,
-          eventType: 'financial.incoming.changed',
-          requestId: p.requestId,
-        });
+      await tx.insert(s.outbox).values({
+        organizationId: p.organizationId,
+        entityId: id,
+        eventType: 'financial.incoming.changed',
+        requestId: p.requestId,
+      });
   }
   async receive(
     p: Principal,
@@ -67,6 +66,7 @@ export class IncomingService {
     filename: string,
     requestKey: string,
   ) {
+    requireCapability('compliantArchive');
     await authorize(this.db, p, 'incoming:import');
     z.uuid().parse(requestKey);
     if (!bytes.length || bytes.length > 2097152)
@@ -229,6 +229,7 @@ export class IncomingService {
     return { bytes, kind: row.kind };
   }
   async revalidate(p: Principal, id: string) {
+    requireCapability('compliantArchive');
     z.uuid().parse(id);
     return this.tx(p, 'incoming:import', async (tx) => {
       const [row] = await tx
@@ -257,6 +258,7 @@ export class IncomingService {
     });
   }
   async approve(p: Principal, id: string, checkId: string, reviewed: boolean) {
+    requireCapability('compliantArchive');
     z.uuid().parse(id);
     z.uuid().parse(checkId);
     z.literal(true).parse(reviewed);
@@ -305,6 +307,8 @@ export class IncomingService {
     });
   }
   async process(organizationId: string, id: string) {
+    requireCapability('backgroundProcessing');
+    requireCapability('compliantArchive');
     if (process.env.VERCEL === '1') throw new Error('WORKER_ONLY_PROCESSING');
     const connection = await this.pool.connect();
     try {

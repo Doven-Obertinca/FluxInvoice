@@ -6,7 +6,11 @@ import {
   ArchiveError,
   type Archive,
 } from '@flux/storage';
-import { validateProduction } from '@flux/shared';
+import {
+  validateProduction,
+  runtimeCapabilities,
+  CapabilityUnavailableError,
+} from '@flux/shared';
 import { KositValidator, type Validator } from '../../einvoice/src/validator';
 export function complianceRuntime(
   root: string,
@@ -23,7 +27,17 @@ export function complianceRuntime(
     process.env.APP_ENV ?? '',
   );
   let archive: Archive;
-  if (process.env.ARCHIVE_MODE === 'S3_OBJECT_LOCK') {
+  if (runtimeCapabilities().beta) {
+    // Explicitly unavailable port: no persistence and no fabricated archive result.
+    archive = {
+      async put() {
+        throw new CapabilityUnavailableError('compliantArchive');
+      },
+      async get() {
+        throw new CapabilityUnavailableError('compliantArchive');
+      },
+    };
+  } else if (process.env.ARCHIVE_MODE === 'S3_OBJECT_LOCK') {
     const bucket = process.env.ARCHIVE_BUCKET,
       kms = process.env.ARCHIVE_KMS_KEY_ARN,
       region = process.env.AWS_REGION;

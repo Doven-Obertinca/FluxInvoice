@@ -1,3 +1,4 @@
+import { runtimeCapabilities } from '@flux/shared';
 import { MorningBrief } from '../../../components/morning-brief';
 import { Usage } from '../../../components/usage';
 import Link from 'next/link';
@@ -94,8 +95,9 @@ export default async function Dashboard() {
             bestandene Prüfung bereitet die Rechnung zur Finalisierung vor.
           </p>
           <p className="muted" style={{ marginTop: 12 }}>
-            Bei der Finalisierung erhält sie ihre feste Nummer. Anschließend
-            steht die archivierte XRechnung zum Download bereit.
+            {runtimeCapabilities().beta
+              ? 'Die rechtskonforme Finalisierung und Archivierung ist während der Beta noch nicht aktiviert.'
+              : 'Bei der Finalisierung erhält sie ihre feste Nummer. Anschließend steht die archivierte XRechnung zum Download bereit.'}
           </p>
           <Link className="text-button" href="/settings/company">
             Kontakt- und Bankdaten prüfen

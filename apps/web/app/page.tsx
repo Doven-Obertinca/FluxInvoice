@@ -1,6 +1,12 @@
 import { AutopilotPromotion } from '../components/autopilot-promotion';
 import Link from 'next/link';
-import { APP_NAME, PLANS, planPrice, SEO_DEFAULT_TITLE } from '@flux/shared';
+import {
+  APP_NAME,
+  PLANS,
+  planPrice,
+  SEO_DEFAULT_TITLE,
+  runtimeCapabilities,
+} from '@flux/shared';
 import { Marketing, StartLink, StructuredData } from '../components/marketing';
 import { APP_URL, publicMetadata, defaultDescription } from '../lib/brand';
 export const metadata = {
@@ -10,9 +16,31 @@ export const metadata = {
     'ERechno Autopilot',
     'Rechnungen verwalten',
   ]),
-  title: { absolute: SEO_DEFAULT_TITLE },
+  title: { absolute: SEO_DEFAULT_TITLE, runtimeCapabilities },
 };
 export default function Home() {
+  if (runtimeCapabilities().beta)
+    return (
+      <Marketing>
+        <section className="marketing-hero">
+          <div>
+            <p className="eyebrow">ERECHNO BETA</p>
+            <h1>Rechnungsentwürfe einfach vorbereiten</h1>
+            <p className="hero-description">
+              Kunden verwalten, Rechnungsentwürfe erstellen und Dokumente im
+              Browser lesen. Die rechtskonforme Finalisierung, Archivierung und
+              der Rechnungsversand sind noch nicht aktiviert.
+            </p>
+            <div className="marketing-actions">
+              <StartLink />
+            </div>
+            <p className="muted">
+              Kostenlos testen · Keine Kreditkarte erforderlich
+            </p>
+          </div>
+        </section>
+      </Marketing>
+    );
   return (
     <Marketing>
       <section className="marketing-hero">

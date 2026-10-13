@@ -9,6 +9,10 @@ import { logOperation, acquisitionEvent } from '@flux/observability';
 import 'server-only';
 import { randomUUID } from 'node:crypto';
 import { betterAuth } from 'better-auth';
+import {
+  authenticationEmailGuard,
+  requiresEmailVerification,
+} from '../../../packages/auth/src/email-policy';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { nextCookies } from 'better-auth/next-js';
 import nodemailer from 'nodemailer';
@@ -17,7 +21,7 @@ import { redirect } from 'next/navigation';
 import { eq, asc } from 'drizzle-orm';
 import { connect, members } from '@flux/db';
 import * as schema from '@flux/db';
-import { APP_NAME, environment } from '@flux/shared';
+import { APP_NAME, environment, requireCapability } from '@flux/shared';
 import { InvoiceService } from '@flux/application';
 const env = environment();
 const globalDb = globalThis as typeof globalThis & {
@@ -42,15 +46,18 @@ const transport = env.SMTP_URL
     })
   : null;
 async function send(to: string, subject: string, url: string) {
+  requireCapability('transactionalEmail');
   if (!transport) throw new Error('MAIL_UNAVAILABLE');
-  await transport.sendMail({
+  const result = await transport.sendMail({
     from: env.MAIL_FROM,
     to,
     subject: `${APP_NAME} – ${subject}`,
     text: `${APP_NAME} – ${subject}\n\n${url}\n\nFalls Sie diese Anfrage nicht gestellt haben, ignorieren Sie diese E-Mail.`,
   });
+  if (!result.accepted?.length) throw new Error('MAIL_REJECTED');
 }
 export const auth = betterAuth({
+  hooks: { before: authenticationEmailGuard },
   databaseHooks: {
     user: {
       create: {
@@ -76,13 +83,13 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
     minPasswordLength: 12,
-    requireEmailVerification: env.APP_ENV !== 'test',
+    requireEmailVerification: requiresEmailVerification(),
     revokeSessionsOnPasswordReset: true,
     sendResetPassword: async ({ user, url }) =>
       send(user.email, 'Passwort zurücksetzen', url),
   },
   emailVerification: {
-    sendOnSignUp: env.APP_ENV !== 'test',
+    sendOnSignUp: requiresEmailVerification(),
     autoSignInAfterVerification: true,
     sendVerificationEmail: async ({ user, url }) =>
       send(user.email, 'E-Mail-Adresse bestätigen', url),

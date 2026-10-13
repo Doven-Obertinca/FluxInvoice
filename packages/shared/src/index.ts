@@ -1,29 +1,17 @@
 import { z } from 'zod';
 import { validateProduction } from './production';
 export * from './production';
+export * from './capabilities';
 export * from './brand';
 export * from './plans';
-export class AppError extends Error {
-  constructor(
-    public readonly code:
-      | 'AUTHENTICATION'
-      | 'AUTHORIZATION'
-      | 'VALIDATION'
-      | 'CONFLICT'
-      | 'NOT_FOUND'
-      | 'EXTERNAL_SERVICE'
-      | 'RATE_LIMIT',
-    message: string,
-  ) {
-    super(message);
-  }
-}
+export * from './errors';
 export const environmentSchema = z
   .object({
     APP_ENV: z.enum(['development', 'test', 'staging', 'production']),
     DATABASE_URL: z.url().refine((v) => /^postgres(ql)?:/.test(v)),
     BETTER_AUTH_SECRET: z.string().min(32),
     BETTER_AUTH_URL: z.url(),
+    ERECHNO_BETA_MODE: z.enum(['true', 'false']).optional(),
     SMTP_URL: z.url().optional(),
     MAIL_FROM: z.email().default('noreply@example.test'),
   })
@@ -35,7 +23,7 @@ export const environmentSchema = z
           path: ['BETTER_AUTH_URL'],
           message: 'HTTPS required',
         });
-      if (!e.SMTP_URL)
+      if (!e.SMTP_URL && e.ERECHNO_BETA_MODE !== 'true')
         ctx.addIssue({
           code: 'custom',
           path: ['SMTP_URL'],

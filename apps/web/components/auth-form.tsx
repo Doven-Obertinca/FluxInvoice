@@ -50,7 +50,9 @@ export function AuthForm({
                     });
           if (result.error)
             setMessage(
-              'Die Anfrage konnte nicht abgeschlossen werden. Prüfen Sie Ihre Angaben und gegebenenfalls die E-Mail-Bestätigung.',
+              result.error.status === 503
+                ? 'Der E-Mail-Versand ist derzeit nicht verfügbar. Bitte versuchen Sie es später erneut.'
+                : 'Die Anfrage konnte nicht abgeschlossen werden. Prüfen Sie Ihre Angaben und gegebenenfalls die E-Mail-Bestätigung.',
             );
           else if (mode === 'sign-in') {
             router.push(afterSignIn);

@@ -1,4 +1,4 @@
-import { APP_NAME } from '@flux/shared';
+import { APP_NAME, runtimeCapabilities } from '@flux/shared';
 import { WorkspaceTools } from '../../components/workspace-tools';
 import Link from 'next/link';
 import { Layers3 } from 'lucide-react';
@@ -24,6 +24,7 @@ export default async function AppLayout({
             <Layers3 size={23} />
           </span>
           {APP_NAME}
+          {runtimeCapabilities().beta && <small>Beta</small>}
         </Link>
         <div className="mobile-signout">
           <SignOut />

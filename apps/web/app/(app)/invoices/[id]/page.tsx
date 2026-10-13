@@ -1,7 +1,7 @@
 import { Usage } from '../../../../components/usage';
 import { InvoiceDelivery } from '../../../../components/invoice-delivery';
 import { notFound } from 'next/navigation';
-import { AppError } from '@flux/shared';
+import { AppError, runtimeCapabilities } from '@flux/shared';
 import { ZodError } from 'zod';
 import { InvoiceWorkspace } from '../../../../components/invoice-workspace';
 import { IssuedInvoice } from '../../../../components/issued-invoice';
@@ -49,26 +49,36 @@ export default async function Invoice({
   return (
     <InvoiceWorkspace key={`${detail.invoice.id}-${detail.invoice.revision}`}>
       {!detail.invoice.finalizedAt && <Usage principal={p} />}
-      <InvoiceLifecycle
-        id={detail.invoice.id}
-        revision={detail.invoice.revision}
-        customer={buyer.name}
-        customerId={detail.invoice.customerId}
-        payable={detail.invoice.payable}
-        status={detail.invoice.status}
-        pending={detail.invoice.finalizationPending}
-        integrity={history.integrity}
-        ready={!!currentRun?.valid}
-        canFinalize={can(membership.role, 'invoice:finalize')}
-        job={currentJob}
-        document={history.documents[0]}
-        issues={detail.run?.profile === 'XRECHNUNG' ? detail.issues : []}
-      />
+      {runtimeCapabilities().invoiceFinalization ? (
+        <InvoiceLifecycle
+          id={detail.invoice.id}
+          revision={detail.invoice.revision}
+          customer={buyer.name}
+          customerId={detail.invoice.customerId}
+          payable={detail.invoice.payable}
+          status={detail.invoice.status}
+          pending={detail.invoice.finalizationPending}
+          integrity={history.integrity}
+          ready={!!currentRun?.valid}
+          canFinalize={can(membership.role, 'invoice:finalize')}
+          job={currentJob}
+          document={history.documents[0]}
+          issues={detail.run?.profile === 'XRECHNUNG' ? detail.issues : []}
+        />
+      ) : (
+        <p className="notice">
+          Die rechtskonforme Finalisierung und Archivierung ist während der Beta
+          noch nicht aktiviert. Sie können den Entwurf weiter bearbeiten.
+        </p>
+      )}
       {detail.invoice.finalizedAt && (
         <InvoiceDelivery
           id={detail.invoice.id}
           attempts={await delivery.history(p, detail.invoice.id)}
-          canSend={can(membership.role, 'invoice:send')}
+          canSend={
+            runtimeCapabilities().invoiceDelivery &&
+            can(membership.role, 'invoice:send')
+          }
         />
       )}
       {detail.invoice.status === 'FINALIZED' ? (

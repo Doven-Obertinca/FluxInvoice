@@ -1,3 +1,4 @@
+import { runtimeCapabilities } from '@flux/shared';
 import Link from 'next/link';
 import { Marketing, Breadcrumb, StartLink } from '../../components/marketing';
 import { publicMetadata } from '../../lib/brand';
@@ -7,6 +8,28 @@ export const metadata = publicMetadata(
   '/sicherheit',
 );
 export default function Page() {
+  if (runtimeCapabilities().beta)
+    return (
+      <Marketing>
+        <article className="marketing-section prose">
+          <h1>Rechnungen sicher vorbereiten</h1>
+          <p>
+            In der ERechno Beta können Sie Kunden verwalten, Rechnungsentwürfe
+            bearbeiten und Dokumente im Browser lesen.
+          </p>
+          <p>
+            Die rechtskonforme Finalisierung und Archivierung, die
+            KoSIT-Prüfung, der Rechnungsversand und die Archivierung eingehender
+            Rechnungen sind noch nicht aktiviert.
+          </p>
+          <p>
+            Anmeldung und Berechtigungen werden weiterhin auf dem Server
+            geprüft. Eine Dokumentanzeige ersetzt keine offizielle Prüfung.
+          </p>
+          <StartLink />
+        </article>
+      </Marketing>
+    );
   return (
     <Marketing>
       <article className="marketing-section prose">

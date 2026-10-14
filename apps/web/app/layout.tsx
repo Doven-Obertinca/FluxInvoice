@@ -11,6 +11,9 @@ export const metadata: Metadata = {
   metadataBase: new URL(APP_URL),
   title: { default: SEO_DEFAULT_TITLE, template: `%s | ${APP_NAME}` },
   description: SEO_DEFAULT_DESCRIPTION,
+  icons: {
+    icon: { url: '/favicon.png', type: 'image/png', sizes: '192x192' },
+  },
   robots: { index: false, follow: false },
   verification: process.env.GOOGLE_SITE_VERIFICATION
     ? { google: process.env.GOOGLE_SITE_VERIFICATION }

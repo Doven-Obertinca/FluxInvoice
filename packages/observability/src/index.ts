@@ -7,6 +7,8 @@ export function logOperation(data: {
   result: string;
   durationMs?: number;
   errorCode?: string;
+  errorName?: string;
+  errorMessage?: string;
 }) {
   logger.info(data);
 }

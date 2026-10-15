@@ -1,4 +1,7 @@
 import { toNextJsHandler } from 'better-auth/next-js';
 import { auth } from '../../../../lib/server';
-export const { GET, POST } = toNextJsHandler(auth);
+import { authenticationHandler } from '../../../../../../packages/observability/src/authentication';
+const handlers = toNextJsHandler(auth);
+export const GET = authenticationHandler(handlers.GET);
+export const POST = authenticationHandler(handlers.POST);
 export const runtime = 'nodejs';

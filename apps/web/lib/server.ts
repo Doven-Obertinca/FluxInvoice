@@ -5,7 +5,8 @@ import { resolve } from 'node:path';
 import { IncomingService } from '../../../packages/application/src/incoming';
 import { EinvoiceService } from '../../../packages/application/src/einvoice';
 import { complianceRuntime } from '../../../packages/application/src/runtime';
-import { logOperation, acquisitionEvent } from '@flux/observability';
+import { acquisitionEvent } from '@flux/observability';
+import { logAuthenticationFailure } from '../../../packages/observability/src/authentication';
 import 'server-only';
 import { randomUUID } from 'node:crypto';
 import { betterAuth } from 'better-auth';
@@ -69,13 +70,14 @@ export const auth = betterAuth({
   },
   appName: APP_NAME,
   logger: {
-    log: (level) =>
-      logOperation({
-        requestId: randomUUID(),
-        operation: 'authentication',
-        result: level,
-      }),
+    log: (level, message, ...args) => {
+      if (level === 'error' || level === 'warn')
+        logAuthenticationFailure(
+          args.find((value) => value instanceof Error) ?? message,
+        );
+    },
   },
+  onAPIError: { onError: (error) => logAuthenticationFailure(error) },
   baseURL: env.BETTER_AUTH_URL,
   secret: env.BETTER_AUTH_SECRET,
   database: drizzleAdapter(db, { provider: 'pg', schema }),

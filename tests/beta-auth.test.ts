@@ -74,3 +74,57 @@ it('beta does not bypass verification; missing email rejects signup and recovery
     503,
   );
 });
+
+it('rejects www signup before user creation or email when auth uses the apex origin; aligned canonical origin succeeds', async () => {
+  vi.stubEnv('APP_ENV', 'production');
+  vi.stubEnv('ERECHNO_BETA_MODE', 'true');
+  vi.stubEnv('SMTP_URL', 'smtps://fixture:fixture@smtp.provider.dev:465');
+  vi.stubEnv('MAIL_FROM', 'mail@erechno.de');
+  for (const baseURL of ['https://erechno.de', 'https://www.erechno.de']) {
+    const store = { user: [], account: [], session: [], verification: [] };
+    const send = vi.fn(async () => {});
+    const auth = betterAuth({
+      baseURL,
+      trustedOrigins: [baseURL],
+      advanced: { disableOriginCheck: false, disableCSRFCheck: false },
+      secret: 'unit-fixture-0123456789-ABCDEFGHIJKLMNOPQRSTUVWXYZ',
+      database: memoryAdapter(store),
+      hooks: { before: authenticationEmailGuard },
+      logger: { disabled: true },
+      emailAndPassword: {
+        enabled: true,
+        minPasswordLength: 12,
+        requireEmailVerification: true,
+      },
+      emailVerification: { sendOnSignUp: true, sendVerificationEmail: send },
+    });
+    const response = await auth.handler(
+      new Request('https://www.erechno.de/api/auth/sign-up/email', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          origin: 'https://www.erechno.de',
+          'sec-fetch-site': 'same-origin',
+          'sec-fetch-mode': 'cors',
+        },
+        body: JSON.stringify({
+          name: 'Fixture',
+          email: 'canonical@example.test',
+          password: 'unit-password-12345',
+          callbackURL: '/onboarding',
+        }),
+      }),
+    );
+    if (baseURL === 'https://erechno.de') {
+      expect(response.status).toBe(403);
+      expect((await response.json()).code).toBe('INVALID_ORIGIN');
+      expect(store.user).toHaveLength(0);
+      expect(send).not.toHaveBeenCalled();
+    } else {
+      expect(response.status).toBe(200);
+      expect(store.user).toHaveLength(1);
+      expect(send).toHaveBeenCalledOnce();
+      expect(response.headers.get('set-cookie')).toBeNull();
+    }
+  }
+});
